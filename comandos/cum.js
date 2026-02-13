@@ -2,52 +2,55 @@ import axios from 'axios'
 
 export const run = async (m, { conn }) => {
     try {
-        // 1. Detectar a quién se le responde o etiqueta
-        let who = m.mentionedJid && m.mentionedJid[0] ? m.mentionedJid[0] : m.quoted ? m.quoted.sender : m.sender
+        // 1. Identificar al objetivo (Prioridad: Mención > Respuesta > Uno mismo)
+        let who = m.mentionedJid && m.mentionedJid[0] 
+            ? m.mentionedJid[0] 
+            : (m.quoted ? m.quoted.sender : m.sender)
+
+        // 2. Extraer nombres de forma segura
+        // 'm.pushName' es el nombre de quien envía el comando
+        let nameSender = m.pushName || 'Usuario'
         
-        // 2. Obtener nombres de forma ultra segura
-        // name2: El que escribe el comando
-        let name2 = m.pushName || 'Alguien'
-        
-        // name: El que recibe (si es quoted, intentamos sacar su nombre del mensaje citado)
-        let name
+        // 'targetName' es el nombre de quien recibe
+        let targetName
         if (who === m.sender) {
-            name = 'sí mismo'
+            targetName = 'sí mismo'
         } else if (m.quoted && m.quoted.sender === who) {
-            // Si hay respuesta a un mensaje, intentamos usar el pushName de ese mensaje
-            name = m.quoted.pushName || `@${who.split('@')[0]}`
+            // Intentamos sacar el pushName del mensaje que respondiste
+            targetName = m.quoted.pushName || `@${who.split('@')[0]}`
         } else {
-            name = `@${who.split('@')[0]}`
+            // Si lo mencionaste por @, usamos el número (WhatsApp lo convierte en nombre)
+            targetName = `@${who.split('@')[0]}`
         }
-        
-        // 3. Reacción manual segura
+
+        // 3. Reacción (Usando el método seguro que ya probamos)
         await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })
 
-        // 4. Texto dinámico
-        let str = who === m.sender 
-            ? `*${name2}* se vino solo... 🥑` 
-            : `💦 ¡Uff! *${name2}* se ha venido sobre *${name}*!`
+        // 4. Texto del mensaje
+        let txt = who === m.sender 
+            ? `*${nameSender}* se vino solo... 🥑` 
+            : `💦 ¡Uff! *${nameSender}* se ha venido sobre *${targetName}*!`
 
-        // 5. Envío del video
+        // 5. Descargar y enviar video de Catbox
         const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4'
-        const response = await axios.get(videoUrl, { responseType: 'arraybuffer' })
-        
+        const { data } = await axios.get(videoUrl, { responseType: 'arraybuffer' })
+
         await conn.sendMessage(m.chat, { 
-            video: Buffer.from(response.data), 
+            video: Buffer.from(data), 
             mimetype: 'video/mp4',
-            caption: str, 
+            caption: txt, 
             gifPlayback: true,
             mentions: [m.sender, who] 
         }, { quoted: m })
 
     } catch (e) {
-        console.error("ERROR EN DETECCIÓN DE NOMBRE:", e)
-        m.reply("💦 ¡Ufff! (Se vino pero hubo un error de nombres)")
+        console.error("ERROR EN CUM (DETECCIÓN):", e)
+        // No mandamos m.reply aquí para no interrumpir si falla algo pequeño
     }
 }
 
 export const config = {
     name: 'cum',
-    alias: ['correrse'],
+    alias: ['venirse'],
     group: true 
 }

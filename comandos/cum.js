@@ -1,56 +1,40 @@
 import axios from 'axios'
 
-export const run = async (m, { conn, db, who }) => {
+export const run = async (m, { conn, db }) => {
     try {
-        // 1. Verificación de NSFW
+        // 0. Verificación de NSFW (Usando tu base de datos)
         if (m.isGroup && !db?.chats?.[m.chat]?.nsfw) {
-            return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Actívalo con: \`.enable nsfw on\``);
+            return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Actívalo con: \`.enable nsfw on\``)
         }
 
-        // 2. FORZAR DETECCIÓN DE OBJETIVO
-        let targetJid = who
-        
-        // Si 'who' dice que soy yo, pero hay una mención escrita en el texto, la extraemos
-        if (targetJid === m.sender) {
-            const text = m.text || m.body || ''
-            const extractMention = text.match(/@(\d+)/)
-            if (extractMention) {
-                targetJid = extractMention[1] + '@s.whatsapp.net'
-            }
-        }
+        // 1. OBTENCIÓN MANUAL (La que te funcionó)
+        // Busca en menciones, si no hay, busca en citado
+        let victim = m.mentionedJid && m.mentionedJid[0] ? m.mentionedJid[0] : (m.quoted ? m.quoted.sender : null)
 
-        // 3. LÓGICA DE NOMBRES
+        // 2. LÓGICA DE NOMBRES
         let nameSender = m.pushName || 'Usuario'
         let targetName = ''
         let isAlone = true
 
-        const selfId = m.sender.split('@')[0].split(':')[0]
-        const finalTargetId = targetJid.split('@')[0].split(':')[0]
+        // Limpieza básica de IDs para comparar
+        const self = m.sender.split('@')[0]
+        const target = victim ? victim.split('@')[0] : null
 
-        if (finalTargetId !== selfId) {
+        if (target && target !== self) {
             isAlone = false
-            // Intentar obtener el nombre sin romper el bot
-            try {
-                targetName = (m.quoted && m.quoted.sender === targetJid) 
-                    ? m.quoted.pushName 
-                    : (conn.getName ? conn.getName(targetJid) : finalTargetId)
-            } catch {
-                targetName = finalTargetId
-            }
-            
-            // Limpieza por si sale el JID completo
-            if (targetName.toString().includes('@')) targetName = finalTargetId
+            // Si hay nombre en el citado lo usa, si no, el número limpio
+            targetName = (m.quoted && m.quoted.pushName) ? m.quoted.pushName : `@${target}`
         }
 
-        // 4. REACCIÓN
+        // 3. REACCIÓN
         await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })
 
-        // 5. TEXTO FINAL
+        // 4. TEXTO
         let txt = isAlone 
             ? `\`${nameSender}\` se vino solo... 🥑` 
             : `💦 ¡Uff! \`${nameSender}\` se ha venido sobre \`${targetName}\`!`
 
-        // 6. ENVÍO DE VIDEO
+        // 5. ENVÍO DE VIDEO (Catbox)
         const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4'
         const { data } = await axios.get(videoUrl, { responseType: 'arraybuffer' })
 
@@ -59,7 +43,7 @@ export const run = async (m, { conn, db, who }) => {
             mimetype: 'video/mp4',
             caption: txt, 
             gifPlayback: true,
-            mentions: [m.sender, targetJid].filter(Boolean) 
+            mentions: [m.sender, victim].filter(v => v) 
         }, { quoted: m })
 
     } catch (e) {

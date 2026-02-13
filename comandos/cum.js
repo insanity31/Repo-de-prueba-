@@ -1,65 +1,106 @@
 import axios from 'axios'
 
-export const run = async (m, { conn, db }) => {
+export const run = async (m, { conn }) => {
     try {
-        // 1. Verificación de NSFW basada en la base de datos
-        if (m.isGroup && !db?.chats?.[m.chat]?.nsfw) {
-            return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#enable nsfw on*`);
-        }
-
-        // 2. DETECCIÓN DEL OBJETIVO
-        // Usamos directamente las propiedades que vienen en 'm' procesadas por tu handler
-        let victimJid = m.quoted ? m.quoted.sender : (m.mentionedJid && m.mentionedJid[0] ? m.mentionedJid[0] : null)
-
-        // 3. PROCESAMIENTO DE NOMBRES Y COMPARACIÓN
-        const cleaner = (id) => id ? id.split('@')[0].split(':')[0] : null
-        const selfClean = cleaner(m.sender)
-        const targetClean = cleaner(victimJid)
-
-        let nameSender = m.pushName || conn.getName(m.sender) || 'Usuario'
-        let nameVictim = 'Usuario'
-        let str = ''
-
-        if (victimJid && targetClean !== selfClean) {
-            nameVictim = m.quoted?.pushName || conn.getName(victimJid) || 'Usuario'
-            str = `\`${nameSender}\` *se vino dentro de* \`${nameVictim}\`. 💦`
-        } else {
-            str = `\`${nameSender}\` *se vino solo...* 🥑`
-        }
-
-        // 4. SELECCIÓN DE VIDEO ALEATORIO
-        const videos = [
-            'https://telegra.ph/file/9243544e7ab350ce747d7.mp4',
-            'https://telegra.ph/file/fadc180ae9c212e2bd3e1.mp4',
-            'https://telegra.ph/file/79a5a0042dd8c44754942.mp4',
-            'https://telegra.ph/file/035e84b8767a9f1ac070b.mp4',
-            'https://telegra.ph/file/0103144b636efcbdc069b.mp4',
-            'https://telegra.ph/file/4d97457142dff96a3f382.mp4',
-            'https://telegra.ph/file/b1b4c9f48eaae4a79ae0e.mp4',
-            'https://telegra.ph/file/5094ac53709aa11683a54.mp4',
-            'https://telegra.ph/file/dc279553e1ccfec6783f3.mp4',
-            'https://telegra.ph/file/acdb5c2703ee8390aaf33.mp4'
-        ]
-        const video = videos[Math.floor(Math.random() * videos.length)]
-
-        // 5. REACCIÓN Y ENVÍO
-        await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })
+        // 1. OBTENCIÓN DEL OBJETIVO (con múltiples fallbacks)
+        let victim = null
         
+        // Prioridad 1: Mensaje citado
+        if (m.quoted?.sender) {
+            victim = m.quoted.sender
+        }
+        // Prioridad 2: Mención en el texto
+        else if (m.msg?.contextInfo?.mentionedJid?.[0]) {
+            victim = m.msg.contextInfo.mentionedJid[0]
+        }
+        // Prioridad 3: Participante del contexto
+        else if (m.msg?.contextInfo?.participant) {
+            victim = m.msg.contextInfo.participant
+        }
+
+        // 2. LIMPIEZA Y NORMALIZACIÓN DE IDs
+        const cleanId = (jid) => {
+            if (!jid) return null
+            // Elimina @s.whatsapp.net, @lid, :XX, etc.
+            return jid.replace(/@s\.whatsapp\.net|@lid|:\d+/g, '').split('@')[0]
+        }
+
+        const selfClean = cleanId(m.sender)
+        const targetClean = cleanId(victim)
+
+        // 3. OBTENCIÓN DE NOMBRES (con múltiples fallbacks)
+        const getName = async (jid) => {
+            if (!jid) return null
+            
+            try {
+                // Intento 1: pushName del mensaje citado
+                if (m.quoted?.sender === jid && m.quoted.pushName) {
+                    return m.quoted.pushName
+                }
+                
+                // Intento 2: Verificar en contactos del grupo
+                const groupMetadata = await conn.groupMetadata(m.chat).catch(() => null)
+                if (groupMetadata) {
+                    const participant = groupMetadata.participants.find(
+                        p => cleanId(p.id) === cleanId(jid)
+                    )
+                    if (participant?.notify || participant?.name) {
+                        return participant.notify || participant.name
+                    }
+                }
+                
+                // Intento 3: Verificar nombre en WhatsApp
+                const [contact] = await conn.onWhatsApp(jid).catch(() => [null])
+                if (contact?.notify) return contact.notify
+                
+               
+                const number = cleanId(jid)
+                return number ? `+${number}` : 'Usuario'
+                
+            } catch {
+                return cleanId(jid) || 'Usuario'
+            }
+        }
+
+        const nameSender = m.pushName || await getName(m.sender) || 'Usuario'
+        const targetName = victim ? await getName(victim) : null
+
+        
+        const isAlone = !targetClean || targetClean === selfClean
+
+        // 5. REACCIÓN
         await conn.sendMessage(m.chat, { 
-            video: { url: video }, 
-            caption: str, 
+            react: { text: '💦', key: m.key } 
+        })
+
+        
+        let txt = isAlone 
+            ? `\`${nameSender}\` se vino solo... 🥑` 
+            : `💦 ¡Uff! \`${nameSender}\` se ha venido sobre \`${targetName}\`!`
+
+        
+        const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4'
+        const { data } = await axios.get(videoUrl, { 
+            responseType: 'arraybuffer',
+            timeout: 10000 
+        })
+
+        await conn.sendMessage(m.chat, { 
+            video: Buffer.from(data), 
+            mimetype: 'video/mp4',
+            caption: txt, 
             gifPlayback: true,
-            mentions: [m.sender, victimJid].filter(v => v)
+            mentions: [m.sender, victim].filter(Boolean) 
         }, { quoted: m })
 
     } catch (e) {
-        console.error("❌ ERROR EN CUM:", e)
+        console.error("❌ ERROR EN CUM:", e.message || e)
+        await conn.reply(m.chat, '⚠️ Ocurrió un error al ejecutar el comando.', m)
     }
 }
 
 export const config = {
     name: 'cum',
-    alias: ['leche', 'venirse'],
-    group: true,
-    nsfw: true
+    alias: ['correrse'],
+    group: true 
 }

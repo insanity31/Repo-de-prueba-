@@ -1,34 +1,32 @@
 import axios from 'axios'
 
-// Helper para limpiar IDs (No requiere imports externos si lo definimos aquí)
+// Función para limpiar IDs
 const clean = (jid) => jid ? jid.split('@')[0].split(':')[0] + '@s.whatsapp.net' : ''
 
 export const run = async (m, { conn }) => {
     try {
-        // 1. LÓGICA DE DETECCIÓN AVANZADA (Basada en lo que pasaste)
-        const ctx = m?.message?.extendedTextMessage?.contextInfo || m?.msg?.contextInfo || {}
+        // 1. OBTENCIÓN DE VÍCTIMA (Prioridad: Citado > Mención)
+        let victimJid = m.quoted ? m.quoted.sender : (m.mentionedJid && m.mentionedJid[0] ? m.mentionedJid[0] : null)
         
-        // Prioridad 1: Menciones directas
-        let victim = m?.mentionedJid?.[0] || ctx?.mentionedJid?.[0]
-        
-        // Prioridad 2: Si no hay mención, buscamos el citado (quoted)
-        if (!victim) {
-            victim = m?.quoted?.sender || ctx?.participant || m?.msg?.contextInfo?.participant
-        }
-
-        // 2. PROCESAMIENTO DE IDENTIDADES
-        const senderActual = clean(m.sender)
-        const targetActual = victim ? clean(victim) : null
-
+        // 2. LÓGICA DE NOMBRES
         let nameSender = m.pushName || 'Usuario'
         let targetName = ''
         let isAlone = true
 
-        // Solo es "sobre otro" si hay víctima y no soy yo mismo
+        const senderActual = clean(m.sender)
+        const targetActual = victimJid ? clean(victimJid) : null
+
         if (targetActual && targetActual !== senderActual) {
             isAlone = false
-            // Intentamos sacar el nombre del citado, si no, usamos el número
-            targetName = m.quoted?.pushName || `@${targetActual.split('@')[0]}`
+            
+            // --- AQUÍ ESTÁ EL TRUCO PARA EL NOMBRE ---
+            // 1. Intentamos sacar el pushName del mensaje citado (m.quoted)
+            // 2. Si no existe, buscamos en los contactos guardados de la conexión
+            // 3. Si no, usamos el número limpio
+            targetName = m.quoted?.pushName || 
+                         conn.contacts[targetActual]?.name || 
+                         conn.contacts[targetActual]?.notify || 
+                         targetActual.split('@')[0]
         }
 
         // 3. REACCIÓN
@@ -48,11 +46,11 @@ export const run = async (m, { conn }) => {
             mimetype: 'video/mp4',
             caption: txt, 
             gifPlayback: true,
-            mentions: [m.sender, victim].filter(v => v) 
+            mentions: [m.sender, victimJid].filter(v => v) 
         }, { quoted: m })
 
     } catch (e) {
-        console.error("ERROR EN CUM (ADVANCED):", e)
+        console.error("ERROR EN CUM:", e)
     }
 }
 

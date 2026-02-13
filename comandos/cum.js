@@ -1,89 +1,86 @@
 import axios from 'axios'
 
+// --- FUNCIONES DE SOPORTE PARA DETECCIÓN (LID & JID) ---
+const normalizeJid = (jid) => {
+    if (typeof jid !== 'string') return ''
+    return jid.toLowerCase().trim()
+}
+
+const getDecodeJid = (conn) => (jid) => {
+    if (!jid) return jid
+    if (/:\d+@/gi.test(jid)) {
+        const decode = jid.match(/(\d+):(\d+)@/gi)
+        if (decode) return decode[0].split(':')[0] + '@s.whatsapp.net'
+    }
+    return jid
+}
+
+async function resolveLidToPnJid(conn, chatJid, candidateJid) {
+    const jid = normalizeJid(candidateJid)
+    if (!jid || !jid.endsWith('@lid')) return jid
+    if (!chatJid || !String(chatJid).endsWith('@g.us')) return jid
+    
+    try {
+        const meta = await conn.groupMetadata(chatJid).catch(() => null)
+        const participants = Array.isArray(meta?.participants) ? meta.participants : []
+        const found = participants.find(p => 
+            normalizeJid(p?.id) === jid || normalizeJid(p?.lid) === jid
+        )
+        return found?.id || jid
+    } catch { return jid }
+}
+
 export const run = async (m, { conn }) => {
     try {
-        // 1. OBTENCIÓN DEL OBJETIVO (con múltiples fallbacks)
-        let victim = null
-        
-        // Prioridad 1: Mensaje citado
-        if (m.quoted?.sender) {
-            victim = m.quoted.sender
-        }
-        // Prioridad 2: Mención en el texto
-        else if (m.msg?.contextInfo?.mentionedJid?.[0]) {
-            victim = m.msg.contextInfo.mentionedJid[0]
-        }
-        // Prioridad 3: Participante del contexto
-        else if (m.msg?.contextInfo?.participant) {
-            victim = m.msg.contextInfo.participant
+        const decodeJid = getDecodeJid(conn)
+        const chatJid = decodeJid(m.chat)
+
+        // 1. OBTENCIÓN DEL OBJETIVO USANDO TU LÓGICA AVANZADA
+        let victim = ''
+        const ctx = m?.message?.extendedTextMessage?.contextInfo || m?.msg?.contextInfo || {}
+        const mentioned = m?.mentionedJid || ctx?.mentionedJid || []
+
+        if (mentioned.length > 0) {
+            victim = await resolveLidToPnJid(conn, chatJid, decodeJid(mentioned[0]))
+        } else if (m.quoted) {
+            victim = await resolveLidToPnJid(conn, chatJid, decodeJid(m.quoted.sender))
+        } else if (ctx?.participant) {
+            victim = await resolveLidToPnJid(conn, chatJid, decodeJid(ctx.participant))
         }
 
-        // 2. LIMPIEZA Y NORMALIZACIÓN DE IDs
-        const cleanId = (jid) => {
-            if (!jid) return null
-            // Elimina @s.whatsapp.net, @lid, :XX, etc.
-            return jid.replace(/@s\.whatsapp\.net|@lid|:\d+/g, '').split('@')[0]
-        }
-
+        // 2. NORMALIZACIÓN PARA COMPARACIÓN
+        const cleanId = (jid) => jid ? jid.split('@')[0].split(':')[0] : null
         const selfClean = cleanId(m.sender)
         const targetClean = cleanId(victim)
+        const isAlone = !victim || selfClean === targetClean
 
-        // 3. OBTENCIÓN DE NOMBRES (con múltiples fallbacks)
+        // 3. OBTENCIÓN DE NOMBRES
         const getName = async (jid) => {
             if (!jid) return null
-            
-            try {
-                // Intento 1: pushName del mensaje citado
-                if (m.quoted?.sender === jid && m.quoted.pushName) {
-                    return m.quoted.pushName
-                }
-                
-                // Intento 2: Verificar en contactos del grupo
-                const groupMetadata = await conn.groupMetadata(m.chat).catch(() => null)
-                if (groupMetadata) {
-                    const participant = groupMetadata.participants.find(
-                        p => cleanId(p.id) === cleanId(jid)
-                    )
-                    if (participant?.notify || participant?.name) {
-                        return participant.notify || participant.name
-                    }
-                }
-                
-                // Intento 3: Verificar nombre en WhatsApp
-                const [contact] = await conn.onWhatsApp(jid).catch(() => [null])
-                if (contact?.notify) return contact.notify
-                
-               
-                const number = cleanId(jid)
-                return number ? `+${number}` : 'Usuario'
-                
-            } catch {
-                return cleanId(jid) || 'Usuario'
+            const jidClean = decodeJid(jid)
+            // Intentar pushName del citado primero (es lo más rápido)
+            if (m.quoted && decodeJid(m.quoted.sender) === jidClean && m.quoted.pushName) {
+                return m.quoted.pushName
             }
+            // Intentar buscar en contactos de la conexión
+            const contact = conn.contacts?.[jidClean]
+            if (contact?.name || contact?.notify) return contact.name || contact.notify
+            return jidClean.split('@')[0]
         }
 
         const nameSender = m.pushName || await getName(m.sender) || 'Usuario'
-        const targetName = victim ? await getName(victim) : null
+        const targetName = isAlone ? null : await getName(victim)
 
-        
-        const isAlone = !targetClean || targetClean === selfClean
+        // 4. ACCIÓN Y REACCIÓN
+        await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })
 
-        // 5. REACCIÓN
-        await conn.sendMessage(m.chat, { 
-            react: { text: '💦', key: m.key } 
-        })
-
-        
         let txt = isAlone 
             ? `\`${nameSender}\` se vino solo... 🥑` 
             : `💦 ¡Uff! \`${nameSender}\` se ha venido sobre \`${targetName}\`!`
 
-        
+        // 5. VIDEO
         const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4'
-        const { data } = await axios.get(videoUrl, { 
-            responseType: 'arraybuffer',
-            timeout: 10000 
-        })
+        const { data } = await axios.get(videoUrl, { responseType: 'arraybuffer' })
 
         await conn.sendMessage(m.chat, { 
             video: Buffer.from(data), 
@@ -94,8 +91,7 @@ export const run = async (m, { conn }) => {
         }, { quoted: m })
 
     } catch (e) {
-        console.error("❌ ERROR EN CUM:", e.message || e)
-        await conn.reply(m.chat, '⚠️ Ocurrió un error al ejecutar el comando.', m)
+        console.error("ERROR EN CUM:", e)
     }
 }
 

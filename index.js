@@ -42,8 +42,6 @@ async function cargarComandos() {
 
 async function startBMax() {
     database.load();
-
-    // Definimos la ruta de la sesión
     const authFolder = global.sessions || './session_bmax';
 
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
@@ -51,9 +49,17 @@ async function startBMax() {
 
     let opcion;
     if (!state.creds.registered) {
-        console.log(chalk.cyan.bold(`\n¿CÓMO DESEAS VINCULAR A B-MAX?\n`));
-        console.log(chalk.white(`1. Código QR`));
-        console.log(chalk.white(`2. Código de 8 dígitos (Pairing Code)\n`));
+        // 1. Bloque de inicio unido
+        console.clear(); // Limpia para ver solo el inicio
+        console.log(chalk.cyan.bold(`
+╔════════════════════════════════════╗
+║      🤖 SISTEMA DE VINCULACIÓN     ║
+╚════════════════════════════════════╝
+¿Cómo deseas vincular a B-Max?
+
+1. Código QR
+2. Código de 8 dígitos (Pairing Code)
+`));
         opcion = await question(chalk.yellow('Elige una opción (1 o 2): '));
     }
 
@@ -65,25 +71,31 @@ async function startBMax() {
         browser: ['Ubuntu', 'Chrome', '20.0.04'],
     });
 
-    // LÓGICA DE CREACIÓN JUSTO A TIEMPO
+    // 2. Lógica de Pairing con flujo limpio
     if (opcion === '2' && !conn.authState.creds.registered) {
-        // CREAMOS LA CARPETA AQUÍ MISMO, JUSTO ANTES DE PEDIR EL NÚMERO
-        if (!fs.existsSync(authFolder)) {
-            fs.mkdirSync(authFolder, { recursive: true });
-            console.log(chalk.green('✅ Carpeta de sesión creada.'));
-        }
+        if (!fs.existsSync(authFolder)) fs.mkdirSync(authFolder, { recursive: true });
 
-        const numero = await question(chalk.cyan('\nEscribe tu número (ej: 573229506110): '));
+        console.log(chalk.magenta('\n--- CONFIGURACIÓN DE PAIRING ---'));
+        const numero = await question(chalk.cyan('Escribe tu número (Ejemplo: 573229506110): '));
         const numLimpio = numero.replace(/[^0-9]/g, '');
         
-        console.log(chalk.yellow('Generando código...'));
+        console.log(chalk.gray('Generando clave de acceso...'));
         await delay(3000); 
         
         try {
             const code = await conn.requestPairingCode(numLimpio);
-            console.log(chalk.black.bgCyan(` TU CÓDIGO ES: `) + chalk.black.bgWhite.bold(` ${code} `));
+            // 3. Visualización clara del código
+            console.log(chalk.white(`
+┌──────────────────────────────────────┐
+│  TU CÓDIGO DE VINCULACIÓN ES:        │
+│                                      │
+│           ` + chalk.bgWhite.black.bold(`  ${code}  `) + chalk.white(`           │
+│                                      │
+└──────────────────────────────────────┘
+`));
+            console.log(chalk.yellow('⚠️  Ingresa este código en tu celular ahora.\n'));
         } catch (err) {
-            console.log(chalk.red('Error. Reiniciando...'));
+            console.log(chalk.red('❌ Error al generar. Reiniciando...'));
             startBMax();
         }
     }
@@ -103,7 +115,7 @@ async function startBMax() {
     conn.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'open') {
-            console.log(chalk.green.bold(`\n✅ B-MAX CONECTADO\n`));
+            console.log(chalk.green.bold(`\n✅ B-MAX CONECTADO Y OPERATIVO\n`));
         }
         if (connection === 'close') {
             const restart = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;

@@ -12,20 +12,29 @@ export const run = async (m, { conn }) => {
         : `💦 ¡Uff! *${name2}* se ha venido sobre *${name}*!`
 
     try {
-        // Usamos axios porque es más estable para archivos grandes en servidores
         const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4'
+        
+        // Descargamos el video
         const { data } = await axios.get(videoUrl, { responseType: 'arraybuffer' })
 
         await conn.sendMessage(m.chat, { 
-            video: data, // Aquí enviamos el video ya descargado
-            gifPlayback: true, 
+            video: data, 
+            mimetype: 'video/mp4', // FORZAMOS el tipo de archivo
             caption: str, 
+            gifPlayback: true, // Esto lo hace ver como un sticker animado/gif
             mentions: [m.sender, who] 
         }, { quoted: m })
 
     } catch (e) {
-        console.log("Error al enviar video:", e)
-        m.reply("❌ El servidor de videos está lento, intenta de nuevo.")
+        console.error("ERROR EN CUM:", e)
+        // Si falla el buffer, intentamos mandar la URL pero con mimetype forzado
+        await conn.sendMessage(m.chat, { 
+            video: { url: 'https://files.catbox.moe/4ws6bs.mp4' }, 
+            mimetype: 'video/mp4',
+            caption: str, 
+            gifPlayback: true,
+            mentions: [m.sender, who] 
+        }, { quoted: m })
     }
 }
 

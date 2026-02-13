@@ -18,12 +18,7 @@ import { store } from './lib/store.js';
 import { database } from './lib/database.js';
 import print from './lib/print.js';
 
-const rl = readline.createInterface({ 
-    input: process.stdin, 
-    output: process.stdout,
-    terminal: true 
-});
-
+const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
 const question = (text) => new Promise((resolve) => rl.question(text, resolve));
 
 const comandos = new Map();
@@ -43,6 +38,9 @@ async function cargarComandos() {
 async function startBMax() {
     database.load();
     const authFolder = global.sessions || './session_bmax';
+    
+    // CREACIÓN INMEDIATA DE CARPETA (Evita el bug ENOENT de tus fotos)
+    if (!fs.existsSync(authFolder)) fs.mkdirSync(authFolder, { recursive: true });
 
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
     const { version } = await fetchLatestBaileysVersion();
@@ -71,10 +69,8 @@ async function startBMax() {
     });
 
     if (opcion === '2' && !conn.authState.creds.registered) {
-        if (!fs.existsSync(authFolder)) fs.mkdirSync(authFolder, { recursive: true });
-
         console.log(chalk.magenta('\n--- CONFIGURACIÓN DE PAIRING ---'));
-        const numero = await question(chalk.cyan('Escribe tu número (Ejemplo: 573229506110): '));
+        const numero = await question(chalk.cyan('Escribe tu número (Ej: 573229506110): '));
         const numLimpio = numero.replace(/[^0-9]/g, '');
         
         console.log(chalk.gray('Generando clave de acceso...'));
@@ -82,17 +78,14 @@ async function startBMax() {
         
         try {
             const code = await conn.requestPairingCode(numLimpio);
-            // Bloque visual corregido sin errores de sintaxis
-            console.log(chalk.white('\n┌──────────────────────────────────────┐'));
-            console.log(chalk.white('│  TU CÓDIGO DE VINCULACIÓN ES:        │'));
-            console.log(chalk.white('│                                      │'));
-            console.log(chalk.white('│           ') + chalk.bgWhite.black.bold(`  ${code}  `) + chalk.white('           │'));
-            console.log(chalk.white('│                                      │'));
-            console.log(chalk.white('└──────────────────────────────────────┘\n'));
-            console.log(chalk.yellow('⚠️  Ingresa este código en tu celular ahora.\n'));
+            // Formato limpio para que no falle el SyntaxError
+            console.log(chalk.white('\n' + '─'.repeat(40)));
+            console.log(chalk.cyan('TU CÓDIGO DE VINCULACIÓN ES:'));
+            console.log(chalk.black.bgWhite.bold(`    ${code}    `));
+            console.log(chalk.white('─'.repeat(40) + '\n'));
         } catch (err) {
-            console.log(chalk.red('❌ Error al generar. Reiniciando...'));
-            startBMax();
+            console.log(chalk.red('❌ Error. Reinicia el bot.'));
+            process.exit(1);
         }
     }
 
@@ -111,7 +104,7 @@ async function startBMax() {
     conn.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'open') {
-            console.log(chalk.green.bold(`\n✅ B-MAX CONECTADO Y OPERATIVO\n`));
+            console.log(chalk.green.bold(`\n✅ B-MAX CONECTADO\n`));
         }
         if (connection === 'close') {
             const restart = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;

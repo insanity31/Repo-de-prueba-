@@ -1,35 +1,35 @@
 import axios from 'axios'
 
-export const run = async (m, { conn, who }) => {
+export const run = async (m, { conn }) => {
     try {
-        // 1. Nombres básicos
-        let nameSender = m.pushName || 'Usuario'
+        // 1. OBTENCIÓN MANUAL DEL CITADO (Directo de la estructura de Baileys)
+        // Buscamos el mensaje citado incluso si smsg falló
+        let quoted = m.msg?.contextInfo?.quotedMessage ? m.msg.contextInfo : null
+        let victim = m.quoted ? m.quoted.sender : (m.msg?.contextInfo?.participant || null)
         
-        // 2. DETECCIÓN POR PRESENCIA FÍSICA
-        // Si hay un mensaje citado (m.quoted), el objetivo NO eres tú.
-        let esSobreOtro = false
-        let targetName = 'sí mismo'
-        let targetJid = m.sender
+        // 2. LÓGICA DE DETECCIÓN
+        let nameSender = m.pushName || 'Usuario'
+        let targetName = ''
+        let isAlone = true
 
-        if (m.quoted) {
-            esSobreOtro = true
-            targetJid = m.quoted.sender
-            targetName = m.quoted.pushName || `@${targetJid.split('@')[0]}`
-        } else if (m.mentionedJid && m.mentionedJid[0]) {
-            esSobreOtro = true
-            targetJid = m.mentionedJid[0]
-            targetName = `@${targetJid.split('@')[0]}`
+        // Si hay una víctima detectada y NO soy yo mismo
+        if (victim && victim !== m.sender) {
+            isAlone = false
+            // Intentamos sacar el nombre, si no, el número
+            targetName = m.quoted?.pushName || `@${victim.split('@')[0]}`
+        } else {
+            targetName = 'sí mismo'
         }
 
-        // 3. Reacción
+        // 3. REACCIÓN
         await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })
 
-        // 4. Texto (Si esSobreOtro es true, forzamos el mensaje de "sobre")
-        let txt = esSobreOtro 
-            ? `💦 ¡Uff! *${nameSender}* se ha venido sobre *${targetName}*!`
-            : `*${nameSender}* se vino solo... 🥑`
+        // 4. TEXTO
+        let txt = isAlone 
+            ? `*${nameSender}* se vino solo... 🥑` 
+            : `💦 ¡Uff! *${nameSender}* se ha venido sobre *${targetName}*!`
 
-        // 5. Envío del video
+        // 5. VIDEO
         const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4'
         const { data } = await axios.get(videoUrl, { responseType: 'arraybuffer' })
 
@@ -38,7 +38,7 @@ export const run = async (m, { conn, who }) => {
             mimetype: 'video/mp4',
             caption: txt, 
             gifPlayback: true,
-            mentions: [m.sender, targetJid] 
+            mentions: [m.sender, victim].filter(v => v) 
         }, { quoted: m })
 
     } catch (e) {

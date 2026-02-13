@@ -1,34 +1,41 @@
 import axios from 'axios'
 
-export const run = async (m, { conn, who }) => {
+export const run = async (m, { conn }) => {
     try {
-        // 1. Nombres: nameSender (tú), targetName (el otro)
-        let nameSender = m.pushName || 'Usuario'
-        
-        // 2. DETECCIÓN POR PRESENCIA
-        let esSobreOtro = false
-        let targetName = 'sí mismo'
-        let targetJid = m.sender
-
+        // 1. Forzar la detección del objetivo
+        // Primero verificamos si hay una respuesta (quoted) o una mención (@)
+        let victim = null
         if (m.quoted) {
-            esSobreOtro = true
-            targetJid = m.quoted.sender
-            targetName = m.quoted.pushName || `@${targetJid.split('@')[0]}`
+            victim = m.quoted.sender
         } else if (m.mentionedJid && m.mentionedJid[0]) {
-            esSobreOtro = true
-            targetJid = m.mentionedJid[0]
-            targetName = `@${targetJid.split('@')[0]}`
+            victim = m.mentionedJid[0]
         }
 
-        // 3. Reacción
+        // 2. Limpiar IDs para comparar (evitar el error de :1, :2 de dispositivos)
+        const cleaner = (jid) => jid.split('@')[0].split(':')[0] + '@s.whatsapp.net'
+        const senderActual = cleaner(m.sender)
+        const targetActual = victim ? cleaner(victim) : null
+
+        // 3. Definir nombres
+        let nameSender = m.pushName || 'Usuario'
+        let targetName = ''
+        let esSobreOtro = false
+
+        // Solo es "sobre otro" si hay una víctima y esa víctima no soy yo mismo
+        if (targetActual && targetActual !== senderActual) {
+            esSobreOtro = true
+            targetName = m.quoted?.pushName || `@${targetActual.split('@')[0]}`
+        }
+
+        // 4. Reacción
         await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })
 
-        // 4. TEXTO CON FORMATO DE CÓDIGO (Uso de ` `)
+        // 5. Texto con formato ` `
         let txt = esSobreOtro 
             ? `💦 ¡Uff! \`${nameSender}\` se ha venido sobre \`${targetName}\`!`
             : `\`${nameSender}\` se vino solo... 🥑`
 
-        // 5. Envío del video
+        // 6. Envío del video
         const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4'
         const { data } = await axios.get(videoUrl, { responseType: 'arraybuffer' })
 
@@ -37,7 +44,7 @@ export const run = async (m, { conn, who }) => {
             mimetype: 'video/mp4',
             caption: txt, 
             gifPlayback: true,
-            mentions: [m.sender, targetJid] 
+            mentions: [m.sender, victim].filter(v => v) 
         }, { quoted: m })
 
     } catch (e) {

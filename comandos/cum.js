@@ -2,29 +2,27 @@ import axios from 'axios'
 
 export const run = async (m, { conn }) => {
     try {
-        // 1. Identificar al objetivo (quién recibe)
+        // 1. Identificar objetivo
         let who = m.mentionedJid && m.mentionedJid[0] ? m.mentionedJid[0] : m.quoted ? m.quoted.sender : m.sender
         
-        // 2. Definir nombres (usamos el pushName o el número recortado)
-        // name2 es el que envía, name es el que recibe
+        // 2. Nombres ultra-seguros (sin usar funciones externas)
         let name2 = m.pushName || 'Alguien'
         let name = who === m.sender ? 'sí mismo' : `@${who.split('@')[0]}`
         
-        m.react('💦')
+        // 3. Reacción manual (usando conn en lugar de m.react)
+        await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })
 
-        // 3. Texto del mensaje
+        // 4. Texto del mensaje
         let str = who === m.sender 
             ? `*${name2}* se vino solo... 🥑` 
             : `💦 ¡Uff! *${name2}* se ha venido sobre ${name}!`
 
-        // 4. Descargar video de Catbox
+        // 5. Descarga y envío del video
         const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4'
         const response = await axios.get(videoUrl, { responseType: 'arraybuffer' })
-        const buffer = Buffer.from(response.data)
-
-        // 5. Enviar mensaje
+        
         await conn.sendMessage(m.chat, { 
-            video: buffer, 
+            video: Buffer.from(response.data), 
             mimetype: 'video/mp4',
             caption: str, 
             gifPlayback: true,
@@ -32,8 +30,9 @@ export const run = async (m, { conn }) => {
         }, { quoted: m })
 
     } catch (e) {
-        console.error("ERROR CRÍTICO EN CUM:", e)
-        m.reply(`❌ Hubo un error al ejecutar el comando.`)
+        console.error("ERROR FINAL EN CUM:", e)
+        // Si falla todo, al menos manda el texto
+        m.reply("💦 ¡Ufff! (Error al cargar video, pero el sentimiento es el mismo)")
     }
 }
 

@@ -1,7 +1,5 @@
-import { jidNormalizedUser } from '@whiskeysockets/baileys'
-
 export const run = async (m, { conn }) => {
-    // 1. Identificar a quién se etiqueta o se responde
+    // 1. Identificar a quién se la mientan
     let who
     if (m.mentionedJid && m.mentionedJid.length > 0) {
         who = m.mentionedJid[0]
@@ -14,10 +12,10 @@ export const run = async (m, { conn }) => {
     const name = conn.getName(who)
     const name2 = conn.getName(m.sender)
     
-    // Reacción inmediata
+    // Reacción de gotas
     m.react('💦')
 
-    // 2. Texto del comando (Sin hora, solo la acción)
+    // 2. Texto del comando
     let str
     if (who === m.sender) {
         str = `*${name2}* se vino solo... 🥑`
@@ -25,10 +23,10 @@ export const run = async (m, { conn }) => {
         str = `💦 ¡Uff! *${name2}* se ha venido sobre *${name}*!`
     }
 
-    // 3. El video de GitHub que pediste
-    const videoUrl = 'https://raw.githubusercontent.com/danielalejandrobasado-glitch/Yotsuba-MD-Premium/main/uploads/d7fafc060a9316ef.mp4'
+    // 3. El video de Catbox que pasaste
+    const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4'
 
-    // 4. Enviar como Video con reproducción de GIF
+    // 4. Enviar como Video/GIF
     await conn.sendMessage(
         m.chat,
         { 

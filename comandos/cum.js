@@ -4,45 +4,30 @@ export const run = async (m, { conn, db }) => {
     try {
         // 0. Verificación NSFW
         if (m.isGroup && !db?.chats?.[m.chat]?.nsfw) {
-            return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#enable nsfw on*`);
+            return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Actívalo con: \`.enable nsfw on\``);
         }
 
-        // 1. OBTENCIÓN DEL OBJETIVO
-        let victim = null
-        if (m.mentionedJid && m.mentionedJid[0]) {
-            victim = m.mentionedJid[0]
-        } else if (m.quoted) {
-            victim = m.quoted.sender
-        } else {
-            victim = m.msg?.contextInfo?.participant || null
-        }
-
-        // 2. LÓGICA DE DETECCIÓN Y NOMBRES
-        let nameSender = m.pushName || conn.getName(m.sender) || 'Usuario'
+        // 1. OBTENCIÓN DEL OBJETIVO (Mención o Citado)
+        let victim = m.mentionedJid && m.mentionedJid[0] ? m.mentionedJid[0] : (m.quoted ? m.quoted.sender : null)
+        
+        // 2. LÓGICA DE NOMBRES (Sin usar conn.getName para evitar el error)
+        let nameSender = m.pushName || 'Usuario'
         let targetName = ''
         let isAlone = true
 
-        const self = m.sender.split('@')[0].split(':')[0]
-        const targetId = victim ? victim.split('@')[0].split(':')[0] : null
+        const selfId = m.sender.split('@')[0]
+        const targetId = victim ? victim.split('@')[0] : null
 
-        if (targetId && targetId !== self) {
+        if (targetId && targetId !== selfId) {
             isAlone = false
-            
-            // --- AQUÍ CONSEGUIMOS EL NOMBRE SIN NÚMEROS ---
-            // 1. Si es citado, el pushName suele estar disponible
-            // 2. Si no, usamos conn.getName para buscarlo en la base de datos del bot
-            targetName = (m.quoted && m.quoted.sender === victim && m.quoted.pushName) 
-                ? m.quoted.pushName 
-                : conn.getName(victim)
-            
-            // Si conn.getName devuelve el número (porque no hay nombre), limpiamos el @s.whatsapp...
-            if (targetName.includes('@')) targetName = targetName.split('@')[0]
+            // Intentamos sacar el nombre del citado, si no, usamos el número limpio
+            targetName = (m.quoted && m.quoted.pushName) ? m.quoted.pushName : `@${targetId}`
         }
 
         // 3. REACCIÓN
         await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })
 
-        // 4. TEXTO FORMATEADO
+        // 4. TEXTO CON FORMATO ` `
         let txt = isAlone 
             ? `\`${nameSender}\` se vino solo... 🥑` 
             : `💦 ¡Uff! \`${nameSender}\` se ha venido sobre \`${targetName}\`!`
@@ -66,6 +51,6 @@ export const run = async (m, { conn, db }) => {
 
 export const config = {
     name: 'cum',
-    alias: ['correrse', 'leche'],
+    alias: ['leche', 'correrse'],
     group: true 
 }

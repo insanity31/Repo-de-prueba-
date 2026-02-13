@@ -1,42 +1,31 @@
 import axios from 'axios'
 
-export const run = async (m, { conn }) => {
+export const run = async (m, { conn, who }) => {
     try {
-        // 1. OBTENCIÓN DE DATOS CRUDA
-        // Forzamos la obtención del remitente del mensaje citado si existe
-        let quotedUser = m.quoted ? m.quoted.sender : null
-        let mentionedUser = m.mentionedJid && m.mentionedJid[0] ? m.mentionedJid[0] : null
+        // 1. Nombres: name2 (tú), targetName (el otro)
+        let name2 = m.pushName || 'Usuario'
         
-        // 2. DETERMINAR OBJETIVO (Prioridad absoluta al citado)
-        let who = quotedUser || mentionedUser || m.sender
+        // Limpiamos las IDs para comparar sin errores de dispositivo (:1)
+        const senderId = m.sender.split('@')[0].split(':')[0]
+        const targetId = who.split('@')[0].split(':')[0]
         
-        // 3. LIMPIEZA DE JIDS (Quitar el :1 de dispositivos)
-        const limpiar = (jid) => jid.split('@')[0].split(':')[0] + '@s.whatsapp.net'
-        
-        const senderActual = limpiar(m.sender)
-        const targetActual = limpiar(who)
-
-        // 4. LOGICA DE NOMBRES
-        let nameSender = m.pushName || 'Usuario'
-        let targetName = ''
-
-        if (targetActual === senderActual && !m.quoted) {
-            // SOLO si no hay respuesta y la ID es la misma, se vino solo
+        let targetName
+        if (senderId === targetId) {
             targetName = 'sí mismo'
         } else {
-            // Si hay respuesta, intentamos sacar el nombre del citado directamente del objeto
-            targetName = (m.quoted && m.quoted.pushName) ? m.quoted.pushName : `@${targetActual.split('@')[0]}`
+            // Si el handler detectó un citado, usamos su nombre, si no, su número
+            targetName = (m.quoted && m.quoted.pushName) ? m.quoted.pushName : `@${targetId}`
         }
 
-        // 5. CONSTRUCCIÓN DEL TEXTO
-        let txt = (targetActual === senderActual && !m.quoted) 
-            ? `*${nameSender}* se vino solo... 🥑` 
-            : `💦 ¡Uff! *${nameSender}* se ha venido sobre *${targetName}*!`
-
-        // Reacción
+        // 2. Reacción de gotitas
         await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })
 
-        // 6. ENVÍO DE VIDEO
+        // 3. Texto dinámico
+        let txt = (senderId === targetId) 
+            ? `*${name2}* se vino solo... 🥑` 
+            : `💦 ¡Uff! *${name2}* se ha venido sobre *${targetName}*!`
+
+        // 4. Descargar y enviar video
         const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4'
         const { data } = await axios.get(videoUrl, { responseType: 'arraybuffer' })
 
@@ -45,17 +34,16 @@ export const run = async (m, { conn }) => {
             mimetype: 'video/mp4',
             caption: txt, 
             gifPlayback: true,
-            mentions: [m.sender, targetActual] 
+            mentions: [m.sender, who] 
         }, { quoted: m })
 
     } catch (e) {
         console.error("ERROR EN CUM:", e)
-        m.reply(`❌ Error técnico: ${e.message}`)
     }
 }
 
 export const config = {
     name: 'cum',
-    alias: ['correrse'],
+    alias: ['correrse', 'venirse'],
     group: true 
 }

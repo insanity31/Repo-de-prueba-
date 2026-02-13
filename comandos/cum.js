@@ -1,63 +1,30 @@
 import axios from 'axios'
 
-// --- FUNCIONES DE APOYO ---
-const normalizeJid = (jid) => (typeof jid === 'string' ? jid.toLowerCase().trim() : '')
-
-const getDecodeJid = (conn) => (jid) => {
-    if (!jid) return jid
-    if (/:\d+@/gi.test(jid)) {
-        const decode = jid.match(/(\d+):(\d+)@/gi)
-        if (decode) return decode[0].split(':')[0] + '@s.whatsapp.net'
-    }
-    return jid
-}
-
-async function resolveLidToPnJid(conn, chatJid, candidateJid) {
-    const jid = normalizeJid(candidateJid)
-    if (!jid || !jid.endsWith('@lid')) return jid
-    try {
-        const meta = await conn.groupMetadata(chatJid).catch(() => null)
-        const found = (meta?.participants || []).find(p => 
-            normalizeJid(p?.id) === jid || normalizeJid(p?.lid) === jid
-        )
-        return found?.id || jid
-    } catch { return jid }
-}
-
 export const run = async (m, { conn, db }) => {
     try {
-        // 1. Verificación de NSFW (Basado en tu código anterior)
+        // 1. Verificación de NSFW basada en la base de datos
         if (m.isGroup && !db?.chats?.[m.chat]?.nsfw) {
-            return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#nsfw on*`);
+            return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#enable nsfw on*`);
         }
 
-        const decodeJid = getDecodeJid(conn)
-        const chatJid = decodeJid(m.chat)
+        // 2. DETECCIÓN DEL OBJETIVO
+        // Usamos directamente las propiedades que vienen en 'm' procesadas por tu handler
+        let victimJid = m.quoted ? m.quoted.sender : (m.mentionedJid && m.mentionedJid[0] ? m.mentionedJid[0] : null)
 
-        // 2. DETECCIÓN AVANZADA DEL OBJETIVO
-        let victimJid = ''
-        const ctx = m?.message?.extendedTextMessage?.contextInfo || m?.msg?.contextInfo || {}
-        
-        if (m.mentionedJid && m.mentionedJid.length > 0) {
-            victimJid = await resolveLidToPnJid(conn, chatJid, decodeJid(m.mentionedJid[0]))
-        } else if (m.quoted) {
-            victimJid = await resolveLidToPnJid(conn, chatJid, decodeJid(m.quoted.sender))
-        }
-
-        // 3. PROCESAMIENTO DE NOMBRES
+        // 3. PROCESAMIENTO DE NOMBRES Y COMPARACIÓN
         const cleaner = (id) => id ? id.split('@')[0].split(':')[0] : null
         const selfClean = cleaner(m.sender)
         const targetClean = cleaner(victimJid)
 
-        let name2 = m.pushName || conn.getName(m.sender) || 'Usuario'
-        let name = 'Usuario'
+        let nameSender = m.pushName || conn.getName(m.sender) || 'Usuario'
+        let nameVictim = 'Usuario'
         let str = ''
 
         if (victimJid && targetClean !== selfClean) {
-            name = m.quoted?.pushName || conn.getName(victimJid) || 'Usuario'
-            str = `\`${name2}\` *se vino dentro de* \`${name}\`. 💦`
+            nameVictim = m.quoted?.pushName || conn.getName(victimJid) || 'Usuario'
+            str = `\`${nameSender}\` *se vino dentro de* \`${nameVictim}\`. 💦`
         } else {
-            str = `\`${name2}\` *se vino solo...* 🥑`
+            str = `\`${nameSender}\` *se vino solo...* 🥑`
         }
 
         // 4. SELECCIÓN DE VIDEO ALEATORIO
@@ -86,11 +53,10 @@ export const run = async (m, { conn, db }) => {
         }, { quoted: m })
 
     } catch (e) {
-        console.error("ERROR EN CUM:", e)
+        console.error("❌ ERROR EN CUM:", e)
     }
 }
 
-// CONFIGURACIÓN PARA EL HANDLER
 export const config = {
     name: 'cum',
     alias: ['leche', 'venirse'],

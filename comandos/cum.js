@@ -1,32 +1,23 @@
 import axios from 'axios'
 
-// Función para limpiar IDs
-const clean = (jid) => jid ? jid.split('@')[0].split(':')[0] + '@s.whatsapp.net' : ''
-
 export const run = async (m, { conn }) => {
     try {
-        // 1. OBTENCIÓN DE VÍCTIMA (Prioridad: Citado > Mención)
-        let victimJid = m.quoted ? m.quoted.sender : (m.mentionedJid && m.mentionedJid[0] ? m.mentionedJid[0] : null)
+        // 1. OBTENCIÓN MANUAL (Lo que te funcionó antes)
+        let victim = m.quoted ? m.quoted.sender : (m.msg?.contextInfo?.participant || null)
         
-        // 2. LÓGICA DE NOMBRES
+        // 2. LÓGICA DE DETECCIÓN DE "SOLO" O "ACOMPAÑADO"
         let nameSender = m.pushName || 'Usuario'
         let targetName = ''
         let isAlone = true
 
-        const senderActual = clean(m.sender)
-        const targetActual = victimJid ? clean(victimJid) : null
+        // Limpiamos los IDs para comparar (evita fallos de :1 o @lid)
+        const self = m.sender.split('@')[0].split(':')[0]
+        const target = victim ? victim.split('@')[0].split(':')[0] : null
 
-        if (targetActual && targetActual !== senderActual) {
+        if (target && target !== self) {
             isAlone = false
-            
-            // --- AQUÍ ESTÁ EL TRUCO PARA EL NOMBRE ---
-            // 1. Intentamos sacar el pushName del mensaje citado (m.quoted)
-            // 2. Si no existe, buscamos en los contactos guardados de la conexión
-            // 3. Si no, usamos el número limpio
-            targetName = m.quoted?.pushName || 
-                         conn.contacts[targetActual]?.name || 
-                         conn.contacts[targetActual]?.notify || 
-                         targetActual.split('@')[0]
+            // Intentamos sacar el nombre del citado, si no, el número
+            targetName = m.quoted?.pushName || (victim ? victim.split('@')[0] : 'alguien')
         }
 
         // 3. REACCIÓN
@@ -46,7 +37,7 @@ export const run = async (m, { conn }) => {
             mimetype: 'video/mp4',
             caption: txt, 
             gifPlayback: true,
-            mentions: [m.sender, victimJid].filter(v => v) 
+            mentions: [m.sender, victim].filter(v => v) 
         }, { quoted: m })
 
     } catch (e) {

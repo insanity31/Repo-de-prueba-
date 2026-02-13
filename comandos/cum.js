@@ -1,27 +1,30 @@
 import axios from 'axios'
 
 export const run = async (m, { conn }) => {
-    // 1. Identificamos al usuario sin usar getName
-    let who = m.mentionedJid && m.mentionedJid[0] ? m.mentionedJid[0] : m.quoted ? m.quoted.sender : m.sender
-    
-    // Sacamos el nombre directamente del pushName o del número
-    const name = conn.contacts[who]?.name || who.split('@')[0]
-    const name2 = m.pushName || 'Usuario'
-    
-    m.react('💦')
-
-    let str = who === m.sender 
-        ? `*${name2}* se vino solo... 🥑` 
-        : `💦 ¡Uff! *${name2}* se ha venido sobre *${name}*!`
-
     try {
-        const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4'
+        // 1. Identificar al objetivo (quién recibe)
+        let who = m.mentionedJid && m.mentionedJid[0] ? m.mentionedJid[0] : m.quoted ? m.quoted.sender : m.sender
         
-        // Descargamos el video como Buffer
-        const { data } = await axios.get(videoUrl, { responseType: 'arraybuffer' })
+        // 2. Definir nombres (usamos el pushName o el número recortado)
+        // name2 es el que envía, name es el que recibe
+        let name2 = m.pushName || 'Alguien'
+        let name = who === m.sender ? 'sí mismo' : `@${who.split('@')[0]}`
+        
+        m.react('💦')
 
+        // 3. Texto del mensaje
+        let str = who === m.sender 
+            ? `*${name2}* se vino solo... 🥑` 
+            : `💦 ¡Uff! *${name2}* se ha venido sobre ${name}!`
+
+        // 4. Descargar video de Catbox
+        const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4'
+        const response = await axios.get(videoUrl, { responseType: 'arraybuffer' })
+        const buffer = Buffer.from(response.data)
+
+        // 5. Enviar mensaje
         await conn.sendMessage(m.chat, { 
-            video: data, 
+            video: buffer, 
             mimetype: 'video/mp4',
             caption: str, 
             gifPlayback: true,
@@ -29,9 +32,8 @@ export const run = async (m, { conn }) => {
         }, { quoted: m })
 
     } catch (e) {
-        // Si hay error, lo reportamos pero de forma que no mate el proceso
-        console.error("ERROR EN VIDEO:", e)
-        m.reply("❌ Hubo un fallo al procesar el video. Intenta de nuevo.")
+        console.error("ERROR CRÍTICO EN CUM:", e)
+        m.reply(`❌ Hubo un error al ejecutar el comando.`)
     }
 }
 

@@ -1,40 +1,45 @@
 import axios from 'axios'
 
-export const run = async (m, { conn, db }) => {
+// Helper para limpiar IDs (No requiere imports externos si lo definimos aquí)
+const clean = (jid) => jid ? jid.split('@')[0].split(':')[0] + '@s.whatsapp.net' : ''
+
+export const run = async (m, { conn }) => {
     try {
-        // 0. Verificación de NSFW (Usando tu base de datos)
-        if (m.isGroup && !db?.chats?.[m.chat]?.nsfw) {
-            return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Actívalo con: \`.enable nsfw on\``)
+        // 1. LÓGICA DE DETECCIÓN AVANZADA (Basada en lo que pasaste)
+        const ctx = m?.message?.extendedTextMessage?.contextInfo || m?.msg?.contextInfo || {}
+        
+        // Prioridad 1: Menciones directas
+        let victim = m?.mentionedJid?.[0] || ctx?.mentionedJid?.[0]
+        
+        // Prioridad 2: Si no hay mención, buscamos el citado (quoted)
+        if (!victim) {
+            victim = m?.quoted?.sender || ctx?.participant || m?.msg?.contextInfo?.participant
         }
 
-        // 1. OBTENCIÓN MANUAL (La que te funcionó)
-        // Busca en menciones, si no hay, busca en citado
-        let victim = m.mentionedJid && m.mentionedJid[0] ? m.mentionedJid[0] : (m.quoted ? m.quoted.sender : null)
+        // 2. PROCESAMIENTO DE IDENTIDADES
+        const senderActual = clean(m.sender)
+        const targetActual = victim ? clean(victim) : null
 
-        // 2. LÓGICA DE NOMBRES
         let nameSender = m.pushName || 'Usuario'
         let targetName = ''
         let isAlone = true
 
-        // Limpieza básica de IDs para comparar
-        const self = m.sender.split('@')[0]
-        const target = victim ? victim.split('@')[0] : null
-
-        if (target && target !== self) {
+        // Solo es "sobre otro" si hay víctima y no soy yo mismo
+        if (targetActual && targetActual !== senderActual) {
             isAlone = false
-            // Si hay nombre en el citado lo usa, si no, el número limpio
-            targetName = (m.quoted && m.quoted.pushName) ? m.quoted.pushName : `@${target}`
+            // Intentamos sacar el nombre del citado, si no, usamos el número
+            targetName = m.quoted?.pushName || `@${targetActual.split('@')[0]}`
         }
 
         // 3. REACCIÓN
         await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })
 
-        // 4. TEXTO
+        // 4. TEXTO CON FORMATO ` `
         let txt = isAlone 
             ? `\`${nameSender}\` se vino solo... 🥑` 
             : `💦 ¡Uff! \`${nameSender}\` se ha venido sobre \`${targetName}\`!`
 
-        // 5. ENVÍO DE VIDEO (Catbox)
+        // 5. ENVÍO DE VIDEO
         const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4'
         const { data } = await axios.get(videoUrl, { responseType: 'arraybuffer' })
 
@@ -47,12 +52,12 @@ export const run = async (m, { conn, db }) => {
         }, { quoted: m })
 
     } catch (e) {
-        console.error("ERROR EN CUM:", e)
+        console.error("ERROR EN CUM (ADVANCED):", e)
     }
 }
 
 export const config = {
     name: 'cum',
-    alias: ['leche', 'correrse'],
+    alias: ['correrse'],
     group: true 
 }

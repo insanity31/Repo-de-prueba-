@@ -1,46 +1,36 @@
 import axios from 'axios'
 
-export const run = async (m, { conn, db }) => {
+export const run = async (m, { conn, db, who }) => {
     try {
-        // 0. Verificación NSFW
+        // 1. Verificación de NSFW
         if (m.isGroup && !db?.chats?.[m.chat]?.nsfw) {
             return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Actívalo con: \`.enable nsfw on\``);
         }
 
-        // 1. DETERMINAR VÍCTIMA (Menciones tienen prioridad absoluta)
-        let victim = null
-        if (m.mentionedJid && m.mentionedJid.length > 0) {
-            victim = m.mentionedJid[0] 
-        } else if (m.quoted) {
-            victim = m.quoted.sender
-        }
-
-        // 2. LÓGICA DE COMPARACIÓN (Limpieza de ID)
+        // 2. LÓGICA DE NOMBRES USANDO 'WHO'
+        // 'who' ya contiene la mención o el citado gracias a tu Handler
         let nameSender = m.pushName || 'Usuario'
         let targetName = ''
         let isAlone = true
 
-        if (victim) {
-            const self = m.sender.split('@')[0].split(':')[0]
-            const target = victim.split('@')[0].split(':')[0]
+        // Limpieza de IDs para comparar
+        const self = m.sender.split('@')[0]
+        const target = who.split('@')[0]
 
-            // Solo es "solo" si no hay víctima o la víctima soy yo mismo
-            if (target !== self) {
-                isAlone = false
-                // Si es citado, sacamos el pushName. Si es mención, usamos el número o nombre de contacto
-                targetName = (m.quoted && m.quoted.sender === victim && m.quoted.pushName) 
-                    ? m.quoted.pushName 
-                    : (conn.getName ? conn.getName(victim) : `@${target}`)
-                
-                // Limpieza extra por si conn.getName devuelve el JID completo
-                if (targetName.includes('@')) targetName = targetName.split('@')[0]
-            }
+        if (target !== self) {
+            isAlone = false
+            // Intentamos sacar el nombre del objetivo
+            // Prioridad: pushName del citado > nombre en contactos > número
+            targetName = (m.quoted && m.quoted.sender === who) ? m.quoted.pushName : (conn.getName ? conn.getName(who) : target)
+            
+            // Si el nombre sigue siendo el JID, dejamos solo el número
+            if (targetName.includes('@')) targetName = targetName.split('@')[0]
         }
 
         // 3. REACCIÓN
         await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })
 
-        // 4. TEXTO FORMATEADO
+        // 4. TEXTO CON FORMATO ` `
         let txt = isAlone 
             ? `\`${nameSender}\` se vino solo... 🥑` 
             : `💦 ¡Uff! \`${nameSender}\` se ha venido sobre \`${targetName}\`!`
@@ -54,7 +44,7 @@ export const run = async (m, { conn, db }) => {
             mimetype: 'video/mp4',
             caption: txt, 
             gifPlayback: true,
-            mentions: [m.sender, victim].filter(v => v) 
+            mentions: [m.sender, who].filter(Boolean) 
         }, { quoted: m })
 
     } catch (e) {

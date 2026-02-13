@@ -49,8 +49,7 @@ async function startBMax() {
 
     let opcion;
     if (!state.creds.registered) {
-        // 1. Bloque de inicio unido
-        console.clear(); // Limpia para ver solo el inicio
+        console.clear();
         console.log(chalk.cyan.bold(`
 ╔════════════════════════════════════╗
 ║      🤖 SISTEMA DE VINCULACIÓN     ║
@@ -71,7 +70,6 @@ async function startBMax() {
         browser: ['Ubuntu', 'Chrome', '20.0.04'],
     });
 
-    // 2. Lógica de Pairing con flujo limpio
     if (opcion === '2' && !conn.authState.creds.registered) {
         if (!fs.existsSync(authFolder)) fs.mkdirSync(authFolder, { recursive: true });
 
@@ -84,15 +82,13 @@ async function startBMax() {
         
         try {
             const code = await conn.requestPairingCode(numLimpio);
-            // 3. Visualización clara del código
-            console.log(chalk.white(`
-┌──────────────────────────────────────┐
-│  TU CÓDIGO DE VINCULACIÓN ES:        │
-│                                      │
-│           ` + chalk.bgWhite.black.bold(`  ${code}  `) + chalk.white(`           │
-│                                      │
-└──────────────────────────────────────┘
-`));
+            // Bloque visual corregido sin errores de sintaxis
+            console.log(chalk.white('\n┌──────────────────────────────────────┐'));
+            console.log(chalk.white('│  TU CÓDIGO DE VINCULACIÓN ES:        │'));
+            console.log(chalk.white('│                                      │'));
+            console.log(chalk.white('│           ') + chalk.bgWhite.black.bold(`  ${code}  `) + chalk.white('           │'));
+            console.log(chalk.white('│                                      │'));
+            console.log(chalk.white('└──────────────────────────────────────┘\n'));
             console.log(chalk.yellow('⚠️  Ingresa este código en tu celular ahora.\n'));
         } catch (err) {
             console.log(chalk.red('❌ Error al generar. Reiniciando...'));

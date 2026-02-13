@@ -1,32 +1,32 @@
 import { performance } from 'perf_hooks';
 
-export default {
-    run: async (m, { conn }) => {
-        // Marcamos el inicio de la prueba de rendimiento
-        const start = performance.now();
-        
-        // Enviamos un mensaje inicial de "Escaneando"
-        const { key } = await conn.sendMessage(m.chat, { 
-            text: '🏥 *Iniciando escaneo de respuesta...*' 
-        }, { quoted: m });
+export const run = async (m, { conn }) => {
+    // 1. Marca de tiempo inicial
+    let start = performance.now();
 
-        // Marcamos el final
-        const end = performance.now();
-        
-        // Calculamos la latencia en milisegundos
-        // Usamos Math.round para un número limpio
-        const latencia = Math.round(end - start);
+    // 2. Mensaje de espera
+    await m.reply('🚀 *Calculando latencia de B-MAX...*');
 
-        // Editamos el mensaje con el resultado final
-        await conn.sendMessage(m.chat, { 
-            text: `🤖 *SISTEMA B-MAX ACTIVO*\n\n` +
-                 `🚀 *Latencia:* ${latencia} ms\n` +
-                 `📡 *Servidor:* Safari Connection\n` +
-                 `👨‍💻 *Powered by:* DuarteXV`,
-            edit: key 
-        });
-    },
-    owner: false,
-    premium: false,
-    group: false
+    // 3. Marca de tiempo final
+    let end = performance.now();
+
+    // 4. Cálculo de la diferencia
+    let latencia = (end - start).toFixed(3);
+
+    // 5. Respuesta final con estilo
+    const texto = `✅ *PONG!*
+    
+📡 *Latencia:* ${latencia} ms
+🤖 *Estado:* Online
+☁️ *Servidor:* NeviHost`;
+
+    await conn.sendMessage(m.chat, { text: texto }, { quoted: m });
+};
+
+// Configuración del comando para el handler
+export const config = {
+    name: 'ping',
+    description: 'Verifica la velocidad del bot',
+    group: false, // Se puede usar en privado y grupos
+    owner: false  // Cualquiera puede usarlo
 };

@@ -1,41 +1,43 @@
 import './settings.js';
+import chalk from 'chalk'; // ESTE ERA EL QUE FALTABA
 import print from './lib/print.js';
-import { smsg } from './lib/simple.js'; // IMPORTAMOS EL SIMPLE
+import { smsg } from './lib/simple.js';
 import { database } from './lib/database.js';
 
 export const handler = async (m, conn, comandos) => {
     try {
-        // --- SERIALIZACIÓN ---
-        // Esto convierte el mensaje rancio de Baileys en un objeto 'm' con poderes
+        // 1. Serializamos el mensaje
         m = smsg(conn, m); 
 
-        // 1. Imprimir en consola (lo que ya te funciona)
+        // 2. Imprimimos en consola (Monitor de chats)
         await print(m, conn);
 
-        if (!m.message) return;
+        if (!m || !m.body) return;
         
-        // Ahora puedes usar m.body directamente gracias al simple.js
-        const body = m.body || '';
+        // 3. Configuración de prefijo
         const prefix = global.prefix instanceof RegExp ? '.' : (global.prefix || '.'); 
-        
-        if (!body.startsWith(prefix)) return;
+        if (!m.body.startsWith(prefix)) return;
 
-        const args = body.slice(prefix.length).trim().split(/ +/);
+        // 4. Parsear comando y argumentos
+        const args = m.body.slice(prefix.length).trim().split(/ +/);
         const commandName = args.shift().toLowerCase();
         const cmd = comandos.get(commandName);
 
         if (!cmd) return;
 
-        // --- SISTEMA DE PERMISOS ---
+        // 5. Sistema de permisos
         const isOwner = global.owner.some(o => o[0] === m.sender.split('@')[0]);
-        
-        // Ejemplo de uso de m.reply gracias al simple.js
-        if (cmd.owner && !isOwner) return m.reply(`🤖 Solo DuarteXV puede usar esto.`);
+        const isGroup = m.isGroup;
 
-        // 7. EJECUTAR
+        // 6. Filtros de seguridad
+        if (cmd.owner && !isOwner) return;
+        if (cmd.group && !isGroup) return m.reply('🏢 Este comando solo funciona en grupos.');
+
+        // 7. Ejecutar comando
         await cmd.run(m, { conn, args, isOwner, db: database.data });
 
     } catch (e) {
+        // Ahora chalk sí está definido, así que no habrá ReferenceError
         console.log(chalk.red(`[ERROR HANDLER]:`), e);
     }
 };

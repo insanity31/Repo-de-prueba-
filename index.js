@@ -18,7 +18,6 @@ import { store } from './lib/store.js';
 import { database } from './lib/database.js';
 import print from './lib/print.js';
 
-// --- CONFIGURACIÓN DE TERMINAL BLINDADA ---
 const rl = readline.createInterface({ 
     input: process.stdin, 
     output: process.stdout,
@@ -37,22 +36,17 @@ async function cargarComandos() {
         try {
             const module = await import(`./comandos/${file}?v=${Date.now()}`);
             comandos.set(file.replace('.js', ''), module.default);
-        } catch (e) {
-            print.error(`Error en comando: ${file}`, e);
-        }
+        } catch (e) {}
     }
 }
 
 async function startBMax() {
-    // 1. Cargar DB
     database.load();
 
-    // 2. Crear carpeta de sesión ANTES de iniciar (Evita el error ENOENT de tus fotos)
-    if (!fs.existsSync(global.sessions)) {
-        fs.mkdirSync(global.sessions, { recursive: true });
-    }
+    // Definimos la ruta de la sesión
+    const authFolder = global.sessions || './session_bmax';
 
-    const { state, saveCreds } = await useMultiFileAuthState(global.sessions);
+    const { state, saveCreds } = await useMultiFileAuthState(authFolder);
     const { version } = await fetchLatestBaileysVersion();
 
     let opcion;
@@ -60,7 +54,7 @@ async function startBMax() {
         console.log(chalk.cyan.bold(`\n¿CÓMO DESEAS VINCULAR A B-MAX?\n`));
         console.log(chalk.white(`1. Código QR`));
         console.log(chalk.white(`2. Código de 8 dígitos (Pairing Code)\n`));
-        opcion = await question(chalk.yellow('Elige una opción (1 o 2) y presiona ENTER: '));
+        opcion = await question(chalk.yellow('Elige una opción (1 o 2): '));
     }
 
     const conn = makeWASocket({
@@ -68,26 +62,28 @@ async function startBMax() {
         auth: state,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: opcion === '1',
-        browser: ['Ubuntu', 'Chrome', '20.0.04'], // Cambiado para mayor compatibilidad de Pairing
+        browser: ['Ubuntu', 'Chrome', '20.0.04'],
     });
 
-    // --- LÓGICA DE PAIRING CODE MEJORADA ---
+    // LÓGICA DE CREACIÓN JUSTO A TIEMPO
     if (opcion === '2' && !conn.authState.creds.registered) {
-        console.log(chalk.magenta('\n--- MODO CÓDIGO DE VINCULACIÓN ---'));
-        const numero = await question(chalk.cyan('Escribe tu número con código de país (ej: 573229506110): '));
-        
-        // Limpiamos el número de espacios o signos
+        // CREAMOS LA CARPETA AQUÍ MISMO, JUSTO ANTES DE PEDIR EL NÚMERO
+        if (!fs.existsSync(authFolder)) {
+            fs.mkdirSync(authFolder, { recursive: true });
+            console.log(chalk.green('✅ Carpeta de sesión creada.'));
+        }
+
+        const numero = await question(chalk.cyan('\nEscribe tu número (ej: 573229506110): '));
         const numLimpio = numero.replace(/[^0-9]/g, '');
         
         console.log(chalk.yellow('Generando código...'));
-        await delay(3000); // Tiempo para que el socket estabilice
+        await delay(3000); 
         
         try {
             const code = await conn.requestPairingCode(numLimpio);
             console.log(chalk.black.bgCyan(` TU CÓDIGO ES: `) + chalk.black.bgWhite.bold(` ${code} `));
-            console.log(chalk.white('Pégalo en la notificación de WhatsApp de tu celular.\n'));
         } catch (err) {
-            console.log(chalk.red('Error al generar código. Reintenta en 10 segundos.'));
+            console.log(chalk.red('Error. Reiniciando...'));
             startBMax();
         }
     }
@@ -107,7 +103,7 @@ async function startBMax() {
     conn.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect } = update;
         if (connection === 'open') {
-            console.log(chalk.green.bold(`\n✅ B-MAX CONECTADO - SISTEMA OPERATIVO\n`));
+            console.log(chalk.green.bold(`\n✅ B-MAX CONECTADO\n`));
         }
         if (connection === 'close') {
             const restart = (lastDisconnect.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;

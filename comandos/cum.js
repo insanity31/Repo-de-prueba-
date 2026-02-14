@@ -64,40 +64,46 @@ export const run = async (m, { conn, db }) => {
         // ========== VALIDAR SI ESTÁ SOLO ==========
         const isAlone = !victimJID || !victimNum || senderNum === victimNum
 
-        // ========== OBTENER NOMBRES FINALES ==========
+        // ========== OBTENER NOMBRES FINALES (SIEMPRE) ==========
         const senderName = m.pushName || 'Usuario'
         
-        if (!isAlone && !victimName && m.isGroup) {
+        // 🔥 BUSCAR NOMBRE DE LA VÍCTIMA SIEMPRE (aunque sea mención)
+        if (!isAlone && m.isGroup) {
             try {
                 const groupMeta = await conn.groupMetadata(m.chat)
                 const participant = groupMeta.participants.find(p => 
-                    cleanNumber(p.id) === victimNum
+                    cleanNumber(p.id) === victimNum || p.lid === victimJID
                 )
                 
-                if (participant) {
+                if (participant && !victimName) {
                     victimName = participant.notify 
                         || participant.name 
                         || participant.verifiedName 
                         || ''
                 }
-            } catch {
-                // Si falla, se usará el formato @número
+            } catch (err) {
+                console.log('Error buscando nombre:', err.message)
             }
         }
 
-        // 🔥 FORMATO CON BACKTICKS
+        // ========== FORMATO CON BACKTICKS ==========
         let text = ''
-        let mentionsList = [m.sender]
+        let mentionsList = []
         
         if (isAlone) {
             text = `\`${senderName}\` se vino solo... 🥑`
+            mentionsList = [m.sender]
         } else {
-            mentionsList.push(victimJID)
-            
+            // 🔥 SI TIENE NOMBRE: Usar backticks SIN mención
             if (victimName) {
                 text = `💦 ¡Uff! \`${senderName}\` se ha venido sobre \`${victimName}\`!`
-            } else {
+                // NO agregamos menciones porque ya tiene el nombre
+                mentionsList = []
+            } 
+            // Si NO tiene nombre: Usar mención clickeable
+            else {
                 text = `💦 ¡Uff! \`${senderName}\` se ha venido sobre @${victimNum}!`
+                mentionsList = [victimJID]
             }
         }
 

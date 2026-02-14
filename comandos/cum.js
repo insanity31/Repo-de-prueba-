@@ -8,7 +8,6 @@ export const run = async (m, { conn, db }) => {
         }
 
         // 1. OBTENCIÓN DEL OBJETIVO (Mención @user o mensaje citado)
-        // Primero revisa si hay alguien mencionado con @, si no, mira si hay un mensaje citado
         let victim = (m.mentionedJid && m.mentionedJid[0]) ? m.mentionedJid[0] : (m.quoted ? m.quoted.sender : (m.msg?.contextInfo?.participant || null));
         
         // 2. LÓGICA DE DETECCIÓN
@@ -16,15 +15,17 @@ export const run = async (m, { conn, db }) => {
         let targetName = ''
         let isAlone = true
 
-        // Limpieza de IDs para evitar errores de comparación
-        const self = m.sender.split('@')[0].split(':')[0]
-        const target = victim ? victim.split('@')[0].split(':')[0] : null
+        // --- LIMPIEZA TOTAL DE IDs (Esto arregla el error) ---
+        // Extraemos solo los números de los JIDs para comparar sin errores
+        const senderNum = m.sender.split('@')[0].split(':')[0]
+        const victimNum = victim ? victim.split('@')[0].split(':')[0] : null
 
-        // Si hay una víctima detectada y NO soy yo mismo
-        if (target && target !== self) {
+        // Si hay una víctima y el número NO es el mismo que el mío
+        if (victimNum && victimNum !== senderNum) {
             isAlone = false
-            // Intentamos sacar el nombre del citado, o usamos el nombre de contacto, o el número
-            targetName = m.quoted?.pushName || conn.getName(victim) || `@${target}`
+            // Sacamos el nombre limpio
+            targetName = m.quoted?.pushName || conn.getName(victim) || `@${victimNum}`
+            if (targetName.includes('@')) targetName = victimNum // Fallback por si getName falla
         }
 
         // 3. REACCIÓN

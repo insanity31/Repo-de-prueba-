@@ -64,10 +64,9 @@ export const run = async (m, { conn, db }) => {
         // ========== VALIDAR SI ESTÁ SOLO ==========
         const isAlone = !victimJID || !victimNum || senderNum === victimNum
 
-        // ========== OBTENER NOMBRES FINALES (SIEMPRE) ==========
+        // ========== OBTENER NOMBRES FINALES ==========
         const senderName = m.pushName || 'Usuario'
         
-        // 🔥 BUSCAR NOMBRE DE LA VÍCTIMA SIEMPRE (aunque sea mención)
         if (!isAlone && m.isGroup) {
             try {
                 const groupMeta = await conn.groupMetadata(m.chat)
@@ -86,25 +85,18 @@ export const run = async (m, { conn, db }) => {
             }
         }
 
+        // 🔥 SI NO TIENE NOMBRE, USAR "Usuario" GENÉRICO
+        if (!isAlone && !victimName) {
+            victimName = 'Usuario'
+        }
+
         // ========== FORMATO CON BACKTICKS ==========
         let text = ''
-        let mentionsList = []
         
         if (isAlone) {
             text = `\`${senderName}\` se vino solo... 🥑`
-            mentionsList = [m.sender]
         } else {
-            // 🔥 SI TIENE NOMBRE: Usar backticks SIN mención
-            if (victimName) {
-                text = `💦 ¡Uff! \`${senderName}\` se ha venido sobre \`${victimName}\`!`
-                // NO agregamos menciones porque ya tiene el nombre
-                mentionsList = []
-            } 
-            // Si NO tiene nombre: Usar mención clickeable
-            else {
-                text = `💦 ¡Uff! \`${senderName}\` se ha venido sobre @${victimNum}!`
-                mentionsList = [victimJID]
-            }
+            text = `💦 ¡Uff! \`${senderName}\` se ha venido sobre \`${victimName}\`!`
         }
 
         // ========== REACCIÓN ==========
@@ -122,7 +114,7 @@ export const run = async (m, { conn, db }) => {
             mimetype: 'video/mp4',
             caption: text,
             gifPlayback: true,
-            mentions: mentionsList
+            mentions: [] // Sin menciones
         }, { quoted: m })
 
     } catch (e) {

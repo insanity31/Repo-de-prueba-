@@ -7,25 +7,38 @@ export const run = async (m, { conn, db }) => {
             return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#enable nsfw on*`);
         }
 
-        // 1. OBTENCIÓN DEL OBJETIVO (Mención @user o mensaje citado)
-        let victim = (m.mentionedJid && m.mentionedJid[0]) ? m.mentionedJid[0] : (m.quoted ? m.quoted.sender : (m.msg?.contextInfo?.participant || null));
+        // 1. OBTENCIÓN DEL OBJETIVO (Mención, Texto o Citado)
+        let victim = null
         
+        // A. Intentar por mención oficial
+        if (m.mentionedJid && m.mentionedJid[0]) {
+            victim = m.mentionedJid[0]
+        } 
+        // B. Intentar por búsqueda manual en el texto (Si el handler falla)
+        else {
+            const text = m.text || m.body || ''
+            const extract = text.match(/@(\d+)/)
+            if (extract) victim = extract[1] + '@s.whatsapp.net'
+        }
+        // C. Intentar por mensaje citado
+        if (!victim && m.quoted) {
+            victim = m.quoted.sender
+        }
+
         // 2. LÓGICA DE DETECCIÓN
         let nameSender = m.pushName || 'Usuario'
         let targetName = ''
         let isAlone = true
 
-        // --- LIMPIEZA TOTAL DE IDs (Esto arregla el error) ---
-        // Extraemos solo los números de los JIDs para comparar sin errores
-        const senderNum = m.sender.split('@')[0].split(':')[0]
-        const victimNum = victim ? victim.split('@')[0].split(':')[0] : null
+        // Limpieza extrema de números
+        const senderNum = m.sender.replace(/[^0-9]/g, '')
+        const victimNum = victim ? victim.replace(/[^0-9]/g, '') : null
 
-        // Si hay una víctima y el número NO es el mismo que el mío
         if (victimNum && victimNum !== senderNum) {
             isAlone = false
-            // Sacamos el nombre limpio
-            targetName = m.quoted?.pushName || conn.getName(victim) || `@${victimNum}`
-            if (targetName.includes('@')) targetName = victimNum // Fallback por si getName falla
+            // Intentar sacar nombre, si no, usar el número limpio
+            const contactName = conn.getName ? conn.getName(victim) : null
+            targetName = m.quoted?.pushName || (contactName && !contactName.includes('@') ? contactName : `@${victimNum}`)
         }
 
         // 3. REACCIÓN

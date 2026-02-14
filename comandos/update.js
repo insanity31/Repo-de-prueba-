@@ -1,15 +1,11 @@
 import { exec } from 'child_process'
 import { promisify } from 'util'
+
 const execPromise = promisify(exec)
 
-export const run = async (m, { conn, isOwner }) => {
-    // ❌ ANTES (sin mensaje):
-    // if (!isOwner) return
-
-    // ✅ AHORA (con mensaje - PERO NO ES NECESARIO):
-    // El handler YA maneja esto, así que puedes quitar esta línea
-    // if (!isOwner) return m.reply('👑 Este comando es solo para el owner.')
-
+export const run = async (m, { conn }) => {
+    // No necesitas validar 'isOwner' aquí, el Handler ya lo hizo por ti.
+    
     await m.reply('🚀 *Iniciando actualización desde GitHub...*')
 
     try {
@@ -19,14 +15,18 @@ export const run = async (m, { conn, isOwner }) => {
             return await m.reply('✅ *B-MAX ya está actualizado a la última versión.*')
         }
 
+        if (stderr && !stdout) {
+             return await m.reply(`⚠️ *Hubo un aviso durante la descarga:* \n\n\`\`\`${stderr}\`\`\``)
+        }
+
         await m.reply(`✅ *Actualización exitosa:*\n\n\`\`\`${stdout}\`\`\``)
         await m.reply('🔄 *Reiniciando para aplicar cambios...*')
 
-        // El panel de NeviHost reiniciará el proceso automáticamente al morir
+        // El panel de NeviHost reiniciará el proceso automáticamente
         process.exit(0) 
 
     } catch (e) {
-        await m.reply(`❌ *Error en la actualización:*\n\n\`\`\`${e.message}\`\`\``)
+        await m.reply(`❌ *Error crítico en la actualización:*\n\n\`\`\`${e.message}\`\`\``)
     }
 }
 
@@ -34,5 +34,5 @@ export const config = {
     name: 'update',
     alias: ['actualizar', 'gitpull'],
     description: 'Actualizar el bot desde GitHub',
-    owner: true // ← Esto hace que el handler valide automáticamente
+    owner: true // El Handler lee esto y restringe el acceso automáticamente
 }

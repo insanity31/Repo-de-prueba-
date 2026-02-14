@@ -1,72 +1,97 @@
 import axios from 'axios'
 
-export const run = async (m, { conn, db, who }) => {
+export const run = async (m, { conn, db }) => {
     try {
         // --- RESTRICCIÓN NSFW ---
         if (m.isGroup && !db?.chats?.[m.chat]?.nsfw) {
             return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#enable nsfw on*`);
         }
 
-        // 1. USAR EL 'who' DEL HANDLER
-        let victim = who // Será null si no hay mención/quote
-
-        // 2. LÓGICA DE DETECCIÓN
-        let nameSender = m.pushName || 'Usuario'
-        let targetName = ''
-        let isAlone = true
-
-        const cleanNum = (jid) => {
-            if (!jid) return ''
-            return jid.split('@')[0].replace(/:\d+/g, '').trim()
+        // ========== DETECCIÓN DE VÍCTIMA ==========
+        let victim = null
+        
+        // 1. Revisar si hay mención en el mensaje
+        if (m.message?.extendedTextMessage?.contextInfo?.mentionedJid?.length > 0) {
+            victim = m.message.extendedTextMessage.contextInfo.mentionedJid[0]
+        }
+        // 2. Si no hay mención, revisar si respondió a un mensaje
+        else if (m.message?.extendedTextMessage?.contextInfo?.participant) {
+            victim = m.message.extendedTextMessage.contextInfo.participant
+        }
+        // 3. Si respondió a un mensaje (estructura alternativa)
+        else if (m.quoted?.sender) {
+            victim = m.quoted.sender
         }
 
-        const senderNum = cleanNum(m.sender)
-        const victimNum = cleanNum(victim)
+        console.log('🎯 DETECCIÓN:')
+        console.log('Sender:', m.sender)
+        console.log('Victim:', victim)
 
-        // 3. Verificar que victim exista Y sea diferente del sender
-        if (victim && victimNum && senderNum && victimNum !== senderNum) {
-            isAlone = false
-            
-            // OBTENER NOMBRE REAL
-            if (m.quoted?.pushName) {
-                targetName = m.quoted.pushName
-            } else if (m.isGroup) {
-                const groupMetadata = await conn.groupMetadata(m.chat).catch(() => null)
-                const participant = groupMetadata?.participants?.find(p => p.id === victim)
-                targetName = participant?.notify || participant?.name || `Usuario ${victimNum.slice(-4)}`
-            } else {
-                try {
-                    const contact = await conn.getContact(victim)
-                    targetName = contact?.notify || contact?.name || `Usuario ${victimNum.slice(-4)}`
-                } catch {
-                    targetName = `Usuario ${victimNum.slice(-4)}`
-                }
+        // ========== LIMPIAR NÚMEROS ==========
+        const getNumber = (jid) => {
+            if (!jid) return null
+            return jid.split('@')[0].replace(/:\d+/g, '')
+        }
+
+        const senderNumber = getNumber(m.sender)
+        const victimNumber = getNumber(victim)
+
+        console.log('Sender Number:', senderNumber)
+        console.log('Victim Number:', victimNumber)
+
+        // ========== DETERMINAR SI ESTÁ SOLO ==========
+        const isAlone = !victim || !victimNumber || senderNumber === victimNumber
+
+        console.log('¿Está solo?:', isAlone)
+
+        // ========== OBTENER NOMBRES ==========
+        const senderName = m.pushName || 'Usuario'
+        let victimName = ''
+
+        if (!isAlone && m.isGroup) {
+            try {
+                const groupMeta = await conn.groupMetadata(m.chat)
+                const participant = groupMeta.participants.find(p => p.id === victim)
+                
+                // Prioridad: notify > name > número
+                victimName = participant?.notify || participant?.name || `Usuario ${victimNumber.slice(-4)}`
+                
+                console.log('Nombre víctima:', victimName)
+            } catch (err) {
+                console.log('Error obteniendo metadata:', err)
+                victimName = `Usuario ${victimNumber.slice(-4)}`
             }
         }
 
-        // 4. REACCIÓN
-        await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })
+        // ========== CONSTRUIR MENSAJE ==========
+        const text = isAlone 
+            ? `*${senderName}* se vino solo... 🥑`
+            : `💦 ¡Uff! *${senderName}* se ha venido sobre *${victimName}*!`
 
-        // 5. TEXTO
-        let txt = isAlone 
-            ? `*${nameSender}* se vino solo... 🥑` 
-            : `💦 ¡Uff! *${nameSender}* se ha venido sobre *${targetName}*!`
+        console.log('Texto final:', text)
 
-        // 6. ENVÍO DE VIDEO
+        // ========== REACCIÓN ==========
+        await conn.sendMessage(m.chat, { 
+            react: { text: '💦', key: m.key } 
+        })
+
+        // ========== ENVIAR VIDEO ==========
         const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4'
         const { data } = await axios.get(videoUrl, { responseType: 'arraybuffer' })
 
         await conn.sendMessage(m.chat, { 
             video: Buffer.from(data), 
             mimetype: 'video/mp4',
-            caption: txt, 
+            caption: text,
             gifPlayback: true,
-            mentions: [m.sender, victim].filter(Boolean)
+            mentions: isAlone ? [m.sender] : [m.sender, victim]
         }, { quoted: m })
 
+        console.log('✅ Comando ejecutado correctamente')
+
     } catch (e) {
-        console.error("❌ ERROR EN CUM:", e)
-        m.reply("⚠️ Ocurrió un error al ejecutar el comando")
+        console.error('❌ ERROR EN CUM:', e)
+        m.reply('⚠️ Ocurrió un error al ejecutar el comando')
     }
 }
 

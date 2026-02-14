@@ -7,23 +7,24 @@ export const run = async (m, { conn, db }) => {
             return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#enable nsfw on*`);
         }
 
-        // 1. OBTENCIÓN MANUAL DEL CITADO (Directo de la estructura de Baileys)
-        // Buscamos el mensaje citado incluso si smsg falló
-        let quoted = m.msg?.contextInfo?.quotedMessage ? m.msg.contextInfo : null
-        let victim = m.quoted ? m.quoted.sender : (m.msg?.contextInfo?.participant || null)
+        // 1. OBTENCIÓN DEL OBJETIVO (Mención @user o mensaje citado)
+        // Primero revisa si hay alguien mencionado con @, si no, mira si hay un mensaje citado
+        let victim = (m.mentionedJid && m.mentionedJid[0]) ? m.mentionedJid[0] : (m.quoted ? m.quoted.sender : (m.msg?.contextInfo?.participant || null));
         
         // 2. LÓGICA DE DETECCIÓN
         let nameSender = m.pushName || 'Usuario'
         let targetName = ''
         let isAlone = true
 
+        // Limpieza de IDs para evitar errores de comparación
+        const self = m.sender.split('@')[0].split(':')[0]
+        const target = victim ? victim.split('@')[0].split(':')[0] : null
+
         // Si hay una víctima detectada y NO soy yo mismo
-        if (victim && victim !== m.sender) {
+        if (target && target !== self) {
             isAlone = false
-            // Intentamos sacar el nombre, si no, el número
-            targetName = m.quoted?.pushName || `@${victim.split('@')[0]}`
-        } else {
-            targetName = 'sí mismo'
+            // Intentamos sacar el nombre del citado, o usamos el nombre de contacto, o el número
+            targetName = m.quoted?.pushName || conn.getName(victim) || `@${target}`
         }
 
         // 3. REACCIÓN

@@ -7,46 +7,70 @@ export const run = async (m, { conn, db }) => {
             return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#enable nsfw on*`);
         }
 
+        console.log('==================== INICIO CUM ====================')
+
         // ========== DETECCIÓN DE VÍCTIMA ==========
         let victim = null
         
         // 1. Revisar si hay mención en el mensaje
         if (m.message?.extendedTextMessage?.contextInfo?.mentionedJid?.length > 0) {
             victim = m.message.extendedTextMessage.contextInfo.mentionedJid[0]
+            console.log('✅ Detectado desde mentionedJid')
         }
         // 2. Si no hay mención, revisar si respondió a un mensaje
         else if (m.message?.extendedTextMessage?.contextInfo?.participant) {
             victim = m.message.extendedTextMessage.contextInfo.participant
+            console.log('✅ Detectado desde participant')
         }
         // 3. Si respondió a un mensaje (estructura alternativa)
         else if (m.quoted?.sender) {
             victim = m.quoted.sender
+            console.log('✅ Detectado desde quoted.sender')
         }
 
-        console.log('🎯 DETECCIÓN INICIAL:')
-        console.log('Victim original:', victim)
+        console.log('🎯 Victim original:', victim)
+        console.log('🎯 Tipo de victim:', typeof victim)
+        console.log('🎯 ¿Termina en @lid?:', victim?.endsWith('@lid'))
+        console.log('🎯 ¿Es grupo?:', m.isGroup)
 
         // ========== CONVERTIR LID A JID ==========
-        if (victim && victim.endsWith('@lid') && m.isGroup) {
-            console.log('⚠️ LID detectado, convirtiendo a JID...')
-            try {
-                const groupMeta = await conn.groupMetadata(m.chat)
-                const participant = groupMeta.participants.find(p => p.lid === victim)
-                
-                if (participant?.id) {
-                    console.log('✅ LID convertido:', victim, '→', participant.id)
-                    victim = participant.id
-                } else {
-                    console.log('❌ No se pudo convertir LID')
+        if (victim && typeof victim === 'string' && victim.includes('@lid')) {
+            console.log('⚠️ LID DETECTADO - Iniciando conversión...')
+            
+            if (m.isGroup) {
+                try {
+                    console.log('📋 Obteniendo metadata del grupo...')
+                    const groupMeta = await conn.groupMetadata(m.chat)
+                    console.log('📋 Total participantes:', groupMeta.participants.length)
+                    
+                    // Mostrar todos los LIDs disponibles
+                    console.log('📋 LIDs en el grupo:')
+                    groupMeta.participants.forEach(p => {
+                        if (p.lid) {
+                            console.log('  -', p.lid, '→', p.id)
+                        }
+                    })
+                    
+                    const participant = groupMeta.participants.find(p => p.lid === victim)
+                    
+                    if (participant?.id) {
+                        console.log('✅ LID CONVERTIDO:', victim, '→', participant.id)
+                        victim = participant.id
+                    } else {
+                        console.log('❌ NO SE ENCONTRÓ EL LID EN LA LISTA')
+                        victim = null
+                    }
+                } catch (err) {
+                    console.log('❌ Error obteniendo metadata:', err.message)
                     victim = null
                 }
-            } catch (err) {
-                console.log('❌ Error convirtiendo LID:', err)
+            } else {
+                console.log('⚠️ No es grupo, no se puede convertir LID')
                 victim = null
             }
         }
 
-        console.log('Victim final:', victim)
+        console.log('🎯 Victim FINAL:', victim)
 
         // ========== LIMPIAR NÚMEROS ==========
         const getNumber = (jid) => {
@@ -57,20 +81,20 @@ export const run = async (m, { conn, db }) => {
         const senderNumber = getNumber(m.sender)
         const victimNumber = getNumber(victim)
 
-        console.log('Sender Number:', senderNumber)
-        console.log('Victim Number:', victimNumber)
+        console.log('📞 Sender Number:', senderNumber)
+        console.log('📞 Victim Number:', victimNumber)
 
         // ========== DETERMINAR SI ESTÁ SOLO ==========
         const isAlone = !victim || !victimNumber || senderNumber === victimNumber
 
-        console.log('¿Está solo?:', isAlone)
+        console.log('❓ ¿Está solo?:', isAlone)
 
         // ========== OBTENER NOMBRES ==========
         const senderName = m.pushName || 'Usuario'
         let victimName = ''
 
         if (!isAlone) {
-            // 🔥 PRIORIDAD 1: Si respondió a un mensaje, usar el pushName del mensaje citado
+            // 🔥 PRIORIDAD 1: Si respondió a un mensaje, usar pushName
             if (m.quoted?.pushName) {
                 victimName = m.quoted.pushName
                 console.log('✅ Nombre desde quoted.pushName:', victimName)
@@ -80,57 +104,35 @@ export const run = async (m, { conn, db }) => {
                 try {
                     const groupMeta = await conn.groupMetadata(m.chat)
                     
-                    // Buscar participante
                     const participant = groupMeta.participants.find(p => {
                         const pNumber = getNumber(p.id)
                         return pNumber === victimNumber
                     })
                     
                     if (participant) {
-                        console.log('👤 Participante completo:', JSON.stringify(participant, null, 2))
+                        console.log('👤 PARTICIPANTE ENCONTRADO:')
+                        console.log(JSON.stringify(participant, null, 2))
                         
-                        // 🔥 BUSCAR NOMBRE EN ORDEN DE PRIORIDAD
                         victimName = participant.notify 
                             || participant.name 
                             || participant.verifiedName 
-                            || participant.pushName
                             || null
                         
-                        // Si NO encontró ningún nombre, buscar en el contacto directamente
-                        if (!victimName) {
-                            console.log('⚠️ Sin nombre en metadata, buscando en contacto...')
-                            try {
-                                // Método 1: profilePictureUrl puede darnos info
-                                const contact = await conn.onWhatsApp(victim)
-                                console.log('📱 Contacto info:', contact)
-                                
-                                if (contact && contact[0]?.notify) {
-                                    victimName = contact[0].notify
-                                    console.log('✅ Nombre desde onWhatsApp:', victimName)
-                                }
-                            } catch (err2) {
-                                console.log('❌ Error obteniendo contacto:', err2)
-                            }
-                        }
-                        
-                        // Fallback final
-                        if (!victimName) {
-                            victimName = `+${victimNumber}`
-                            console.log('⚠️ Usando número como fallback')
+                        if (victimName) {
+                            console.log('✅ Nombre encontrado:', victimName)
                         } else {
-                            console.log('✅ Nombre final:', victimName)
+                            console.log('⚠️ Participante sin nombre, usando número')
+                            victimName = `+${victimNumber}`
                         }
                     } else {
-                        console.log('❌ Participante NO encontrado')
+                        console.log('❌ Participante NO encontrado en metadata')
                         victimName = `+${victimNumber}`
                     }
                 } catch (err) {
-                    console.log('❌ Error obteniendo metadata:', err)
+                    console.log('❌ Error obteniendo metadata:', err.message)
                     victimName = `+${victimNumber}`
                 }
-            }
-            // 🔥 PRIORIDAD 3: Chat privado
-            else {
+            } else {
                 victimName = `+${victimNumber}`
             }
         }
@@ -141,6 +143,7 @@ export const run = async (m, { conn, db }) => {
             : `💦 ¡Uff! *${senderName}* se ha venido sobre *${victimName}*!`
 
         console.log('📝 Texto final:', text)
+        console.log('==================== FIN DEBUG ====================')
 
         // ========== REACCIÓN ==========
         await conn.sendMessage(m.chat, { 

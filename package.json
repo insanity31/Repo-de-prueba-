@@ -20,7 +20,7 @@
     "@bochilteam/scraper": "^4.2.4",
     "@distube/ytdl-core": "^4.16.12",
     "@vitalets/google-translate-api": "^8.0.0",
-    "@whiskeysockets/baileys": "github:gianpools/baileys",
+    "@whiskeysockets/baileys": "^6.7.8",
     "axios": "^1.1.2",
     "chalk": "^5.1.0",
     "cheerio": "npm:cheerio@1.0.0-rc.12",

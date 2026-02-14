@@ -7,113 +7,106 @@ export const run = async (m, { conn, db }) => {
             return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#enable nsfw on*`);
         }
 
-        console.log('========== INICIO CUM ==========')
-        console.log('📋 m.quoted:', m.quoted ? 'SÍ' : 'NO')
-        console.log('📋 m.quoted?.sender:', m.quoted?.sender)
-        console.log('📋 m.quoted?.pushName:', m.quoted?.pushName)
-        console.log('📋 m.message:', JSON.stringify(m.message, null, 2))
-
         // ========== DETECCIÓN DE VÍCTIMA ==========
-        let victimLID = null
         let victimJID = null
         let victimName = ''
         
-        // 1. Revisar si hay mención
-        if (m.message?.extendedTextMessage?.contextInfo?.mentionedJid?.length > 0) {
-            victimLID = m.message.extendedTextMessage.contextInfo.mentionedJid[0]
-            console.log('✅ LID detectado desde mención:', victimLID)
-        }
-        // 2. Mensaje citado - MEJORADO
-        else if (m.quoted) {
-            console.log('🔍 Analizando mensaje citado...')
-            
-            // Intentar obtener el sender del quoted
-            victimJID = m.quoted.sender 
-                || m.message?.extendedTextMessage?.contextInfo?.participant
-                || null
-                
-            victimName = m.quoted.pushName || ''
-            
-            console.log('✅ JID detectado desde quote:', victimJID)
-            console.log('✅ Nombre desde quote:', victimName)
-            
-            // Si el JID es un LID, marcarlo para conversión
-            if (victimJID && victimJID.endsWith('@lid')) {
-                console.log('⚠️ El quoted sender es un LID, se convertirá')
-                victimLID = victimJID
-                victimJID = null
-                victimName = ''
-            }
+        // MÉTODO 1: Menciones directas
+        const mentions = m.message?.extendedTextMessage?.contextInfo?.mentionedJid || []
+        
+        // MÉTODO 2: Mensaje citado
+        const quotedParticipant = m.message?.extendedTextMessage?.contextInfo?.participant
+        const quotedSender = m.quoted?.sender
+        
+        // Prioridad de detección
+        if (mentions.length > 0) {
+            victimJID = mentions[0]
+        } else if (quotedParticipant) {
+            victimJID = quotedParticipant
+            victimName = m.quoted?.pushName || ''
+        } else if (quotedSender) {
+            victimJID = quotedSender
+            victimName = m.quoted?.pushName || ''
         }
 
-        // ========== SI HAY LID, CONVERTIR A JID Y OBTENER NOMBRE ==========
-        if (victimLID && victimLID.endsWith('@lid') && m.isGroup) {
-            console.log('⚠️ Convirtiendo LID a JID...')
+        // ========== CONVERSIÓN DE LID A JID SI ES NECESARIO ==========
+        if (victimJID && victimJID.includes('@lid') && m.isGroup) {
             try {
                 const groupMeta = await conn.groupMetadata(m.chat)
-                const participant = groupMeta.participants.find(p => p.lid === victimLID)
+                const participant = groupMeta.participants.find(p => 
+                    p.lid === victimJID || p.id === victimJID
+                )
                 
                 if (participant) {
                     victimJID = participant.jid || participant.id
                     
-                    // Si no tenemos nombre del quote, buscarlo en metadata
                     if (!victimName) {
                         victimName = participant.notify 
                             || participant.name 
                             || participant.verifiedName 
                             || ''
                     }
-                    
-                    console.log('✅ JID obtenido:', victimJID)
-                    console.log('✅ Nombre obtenido:', victimName || '(sin nombre)')
-                } else {
-                    console.log('❌ LID no encontrado en participantes')
-                    return m.reply('⚠️ No pude encontrar a ese usuario')
                 }
             } catch (err) {
-                console.log('❌ Error:', err.message)
-                return m.reply('⚠️ Error obteniendo información del grupo')
+                console.log('Error en conversión LID:', err.message)
             }
         }
 
-        // ========== VALIDAR ==========
-        if (!victimJID) {
-            console.log('⚠️ No hay víctima, está solo')
+        // ========== LIMPIAR NÚMEROS ==========
+        const cleanNumber = (jid) => {
+            if (!jid) return null
+            return jid.split('@')[0].replace(/:\d+/g, '')
         }
 
-        const getNum = (jid) => jid?.split('@')[0].replace(/:\d+/g, '')
-        const senderNum = getNum(m.sender)
-        const victimNum = getNum(victimJID)
+        const senderNum = cleanNumber(m.sender)
+        const victimNum = cleanNumber(victimJID)
 
-        const isAlone = !victimJID || senderNum === victimNum
+        // ========== VALIDAR SI ESTÁ SOLO ==========
+        const isAlone = !victimJID || !victimNum || senderNum === victimNum
 
-        console.log('Sender:', senderNum)
-        console.log('Victim:', victimNum)
-        console.log('¿Solo?:', isAlone)
-
-        // ========== NOMBRE FINAL ==========
+        // ========== OBTENER NOMBRES FINALES ==========
         const senderName = m.pushName || 'Usuario'
         
-        if (!isAlone && !victimName) {
-            victimName = `@${victimNum}`
+        if (!isAlone && !victimName && m.isGroup) {
+            try {
+                const groupMeta = await conn.groupMetadata(m.chat)
+                const participant = groupMeta.participants.find(p => 
+                    cleanNumber(p.id) === victimNum
+                )
+                
+                if (participant) {
+                    victimName = participant.notify 
+                        || participant.name 
+                        || participant.verifiedName 
+                        || ''
+                }
+            } catch {
+                // Si falla, se usará el formato @número
+            }
         }
 
-        console.log('Nombre final de víctima:', victimName)
-
-        // ========== TEXTO ==========
-        const text = isAlone
-            ? `*${senderName}* se vino solo... 🥑`
-            : `💦 ¡Uff! *${senderName}* se ha venido sobre *${victimName}*!`
-
-        console.log('📝 Texto:', text)
-        console.log('========== FIN DEBUG ==========')
+        // 🔥 FORMATO CON BACKTICKS
+        let text = ''
+        let mentionsList = [m.sender]
+        
+        if (isAlone) {
+            text = `\`${senderName}\` se vino solo... 🥑`
+        } else {
+            mentionsList.push(victimJID)
+            
+            if (victimName) {
+                text = `💦 ¡Uff! \`${senderName}\` se ha venido sobre \`${victimName}\`!`
+            } else {
+                text = `💦 ¡Uff! \`${senderName}\` se ha venido sobre @${victimNum}!`
+            }
+        }
 
         // ========== REACCIÓN ==========
         await conn.sendMessage(m.chat, { 
             react: { text: '💦', key: m.key } 
         })
 
-        // ========== VIDEO ==========
+        // ========== ENVIAR VIDEO ==========
         const { data } = await axios.get('https://files.catbox.moe/4ws6bs.mp4', {
             responseType: 'arraybuffer'
         })
@@ -123,14 +116,12 @@ export const run = async (m, { conn, db }) => {
             mimetype: 'video/mp4',
             caption: text,
             gifPlayback: true,
-            mentions: isAlone ? [m.sender] : [m.sender, victimJID]
+            mentions: mentionsList
         }, { quoted: m })
-
-        console.log('✅ Comando ejecutado correctamente')
 
     } catch (e) {
         console.error('❌ ERROR:', e)
-        m.reply('⚠️ Ocurrió un error')
+        m.reply('⚠️ Ocurrió un error al ejecutar el comando')
     }
 }
 

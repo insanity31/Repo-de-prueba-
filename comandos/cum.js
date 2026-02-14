@@ -1,48 +1,22 @@
 import axios from 'axios'
 
-export const run = async (m, { conn, db }) => {
+export const run = async (m, { conn, db, who }) => {
     try {
         // --- RESTRICCIÓN NSFW ---
         if (m.isGroup && !db?.chats?.[m.chat]?.nsfw) {
             return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#enable nsfw on*`);
         }
 
-        // 1. OBTENCIÓN DEL OBJETIVO
-        let victim = null
-        
-        if (m.mentionedJid && m.mentionedJid[0]) {
-            victim = m.mentionedJid[0]
-        } else if (m.quoted?.sender) {
-            victim = m.quoted.sender
-        } else {
-            const text = m.text || m.body || m.message?.conversation || 
-                         m.message?.extendedTextMessage?.text || ''
-            
-            const mentionMatch = text.match(/@(\d+)/);
-            if (mentionMatch) {
-                victim = mentionMatch[1] + '@s.whatsapp.net'
-            }
-        }
+        // 1. USAR EL 'who' QUE YA VIENE DEL HANDLER (ya limpio y procesado)
+        let victim = who
 
-        // --- CONVERSIÓN DE LID A JID ---
-        if (victim && victim.endsWith('@lid') && m.isGroup) {
-            const groupMetadata = await conn.groupMetadata(m.chat).catch(() => null)
-            const participant = groupMetadata?.participants?.find(p => 
-                p.lid === victim || p.id === victim
-            )
-            if (participant?.id) {
-                victim = participant.id
-            } else {
-                victim = null
-            }
-        }
+        console.log('🔍 DEBUG CUM:')
+        console.log('m.sender:', m.sender)
+        console.log('who (desde handler):', who)
+        console.log('m.mentionedJid:', m.mentionedJid)
+        console.log('m.quoted?.sender:', m.quoted?.sender)
 
-        // 2. VALIDACIÓN DE JID
-        if (victim && !victim.endsWith('@s.whatsapp.net') && !victim.endsWith('@lid')) {
-            victim = null
-        }
-
-        // 3. LÓGICA DE DETECCIÓN
+        // 2. LÓGICA DE DETECCIÓN
         let nameSender = m.pushName || 'Usuario'
         let targetName = ''
         let isAlone = true
@@ -55,15 +29,20 @@ export const run = async (m, { conn, db }) => {
         const senderNum = cleanNum(m.sender)
         const victimNum = cleanNum(victim)
 
+        console.log('senderNum:', senderNum)
+        console.log('victimNum:', victimNum)
+        console.log('Son iguales?:', senderNum === victimNum)
+
+        // 3. Verificar que victim exista Y sea diferente del sender
         if (victim && victimNum && senderNum && victimNum !== senderNum) {
             isAlone = false
             
-            // 🔥 OBTENER NOMBRE SIN usar conn.getName()
+            // OBTENER NOMBRE REAL
             if (m.quoted?.pushName) {
-                // Nombre del mensaje citado
+                // Prioridad 1: Nombre del mensaje citado
                 targetName = m.quoted.pushName
             } else if (m.isGroup) {
-                // Buscar en metadatos del grupo
+                // Prioridad 2: Buscar en metadatos del grupo
                 const groupMetadata = await conn.groupMetadata(m.chat).catch(() => null)
                 const participant = groupMetadata?.participants?.find(p => p.id === victim)
                 
@@ -73,7 +52,7 @@ export const run = async (m, { conn, db }) => {
                     targetName = `Usuario ${victimNum.slice(-4)}`
                 }
             } else {
-                // Chat privado: intentar obtener del contacto
+                // Prioridad 3: Chat privado
                 try {
                     const contact = await conn.getContact(victim)
                     targetName = contact?.notify || contact?.name || `Usuario ${victimNum.slice(-4)}`
@@ -82,6 +61,9 @@ export const run = async (m, { conn, db }) => {
                 }
             }
         }
+
+        console.log('isAlone:', isAlone)
+        console.log('targetName:', targetName)
 
         // 4. REACCIÓN
         await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })

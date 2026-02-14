@@ -2,13 +2,18 @@ import axios from 'axios'
 
 export const run = async (m, { conn, db }) => {
     try {
+        // --- RESTRICCIÓN NSFW ---
+        if (m.isGroup && !db?.chats?.[m.chat]?.nsfw) {
+            return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#enable nsfw on*`);
+        }
+
         // ========== DETECCIÓN DE VÍCTIMA ==========
         let victimJID = null
         let victimName = ''
-        
+
         const mentions = m.mentionedJid || []
         const quotedSender = m.quoted?.sender
-        
+
         if (mentions.length > 0) {
             victimJID = mentions[0]
         } else if (quotedSender) {
@@ -23,15 +28,10 @@ export const run = async (m, { conn, db }) => {
                 const participant = groupMeta.participants.find(p => 
                     p.lid === victimJID || p.id === victimJID
                 )
-                
                 if (participant) {
                     victimJID = participant.jid || participant.id
-                    
                     if (!victimName) {
-                        victimName = participant.notify 
-                            || participant.name 
-                            || participant.verifiedName 
-                            || ''
+                        victimName = participant.notify || participant.name || ''
                     }
                 }
             } catch (err) {
@@ -39,10 +39,10 @@ export const run = async (m, { conn, db }) => {
             }
         }
 
-        // ========== LIMPIAR NÚMEROS ==========
+        // ========== LIMPIAR NÚMEROS (Anti-Multidispositivo) ==========
         const cleanNumber = (jid) => {
             if (!jid) return null
-            return jid.split('@')[0].replace(/:\d+/g, '')
+            return jid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '')
         }
 
         const senderNum = cleanNumber(m.sender)
@@ -53,83 +53,65 @@ export const run = async (m, { conn, db }) => {
 
         // ========== OBTENER NOMBRES ==========
         const senderName = m.pushName || db.users?.[m.sender]?.name || 'Usuario'
-        
+
         if (!isAlone && !victimName) {
             try {
-                // Método 1: Store de contactos (si existe)
-                if (conn.contacts) {
-                    const contact = conn.contacts[victimJID]
-                    if (contact) {
-                        victimName = contact.notify 
-                            || contact.name 
-                            || contact.verifiedName 
-                            || ''
-                    }
+                if (conn.contacts && conn.contacts[victimJID]) {
+                    victimName = conn.contacts[victimJID].notify || conn.contacts[victimJID].name || ''
                 }
-                
-                // Método 2: Base de datos local
                 if (!victimName && db.users?.[victimJID]) {
                     victimName = db.users[victimJID].name || ''
                 }
-                
-                // Método 3: Metadata del grupo
-                if (!victimName && m.isGroup) {
-                    const groupMeta = await conn.groupMetadata(m.chat)
-                    const participant = groupMeta.participants.find(p => 
-                        cleanNumber(p.id) === victimNum || p.lid === victimJID
-                    )
-                    
-                    if (participant) {
-                        victimName = participant.notify 
-                            || participant.name 
-                            || participant.verifiedName 
-                            || ''
-                    }
-                }
-
-                // Método 4: getName si existe
                 if (!victimName && typeof conn.getName === 'function') {
-                    try {
-                        const name = await conn.getName(victimJID)
-                        if (name && !name.includes('+') && !/^\d+$/.test(name)) {
-                            victimName = name
-                        }
-                    } catch {}
+                    victimName = await conn.getName(victimJID)
                 }
-            } catch (err) {
-                console.log('Error obteniendo nombre:', err.message)
-            }
+            } catch {}
         }
 
-        // Fallback a "Usuario"
-        if (!isAlone && !victimName) {
-            victimName = 'Usuario'
+        if (!isAlone && (!victimName || victimName.includes('@'))) {
+            victimName = victimNum || 'Usuario'
         }
 
-        // ========== FORMATO CON BACKTICKS ==========
+        // ========== FORMATO Y REACCIÓN ==========
         const text = isAlone
             ? `\`${senderName}\` se vino solo... 🥑`
             : `💦 ¡Uff! \`${senderName}\` se ha venido sobre \`${victimName}\`!`
 
-        // ========== REACCIÓN ==========
         await m.react('💦')
 
-        // ========== ENVIAR VIDEO ==========
-        const { data } = await axios.get('https://files.catbox.moe/4ws6bs.mp4', {
-            responseType: 'arraybuffer'
-        })
+        // ========== ENVÍO BLINDADO (Buffer con respaldo de URL) ==========
+        const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4'
+        
+        try {
+            // Intento 1: Descarga manual (Evita errores de timeout de Baileys)
+            const { data } = await axios.get(videoUrl, { 
+                responseType: 'arraybuffer',
+                headers: { 'User-Agent': 'Mozilla/5.0' } 
+            })
 
-        await conn.sendMessage(m.chat, {
-            video: Buffer.from(data),
-            mimetype: 'video/mp4',
-            caption: text,
-            gifPlayback: true,
-            mentions: [] // Sin menciones porque usamos nombres con backticks
-        }, { quoted: m })
+            await conn.sendMessage(m.chat, {
+                video: Buffer.from(data),
+                mimetype: 'video/mp4',
+                caption: text,
+                gifPlayback: true,
+                mentions: isAlone ? [] : [victimJID]
+            }, { quoted: m })
+
+        } catch (error) {
+            console.log("Fallo descarga, intentando por URL directa...")
+            // Intento 2: Por URL si la descarga falla
+            await conn.sendMessage(m.chat, {
+                video: { url: videoUrl },
+                mimetype: 'video/mp4',
+                caption: text,
+                gifPlayback: true,
+                mentions: isAlone ? [] : [victimJID]
+            }, { quoted: m })
+        }
 
     } catch (e) {
         console.error('❌ ERROR EN CUM:', e)
-        m.reply('⚠️ Ocurrió un error al ejecutar el comando')
+        m.reply('⚠️ El servicio de videos no está disponible en este momento.')
     }
 }
 
@@ -137,6 +119,5 @@ export const config = {
     name: 'cum',
     alias: ['correrse'],
     description: 'Comando NSFW',
-    group: true,
-    register: true  // Requiere registro para usar
+    group: true
 }

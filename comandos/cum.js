@@ -7,14 +7,8 @@ export const run = async (m, { conn, db, who }) => {
             return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#enable nsfw on*`);
         }
 
-        // 1. USAR EL 'who' QUE YA VIENE DEL HANDLER (ya limpio y procesado)
-        let victim = who
-
-        console.log('🔍 DEBUG CUM:')
-        console.log('m.sender:', m.sender)
-        console.log('who (desde handler):', who)
-        console.log('m.mentionedJid:', m.mentionedJid)
-        console.log('m.quoted?.sender:', m.quoted?.sender)
+        // 1. USAR EL 'who' DEL HANDLER
+        let victim = who // Será null si no hay mención/quote
 
         // 2. LÓGICA DE DETECCIÓN
         let nameSender = m.pushName || 'Usuario'
@@ -29,30 +23,18 @@ export const run = async (m, { conn, db, who }) => {
         const senderNum = cleanNum(m.sender)
         const victimNum = cleanNum(victim)
 
-        console.log('senderNum:', senderNum)
-        console.log('victimNum:', victimNum)
-        console.log('Son iguales?:', senderNum === victimNum)
-
         // 3. Verificar que victim exista Y sea diferente del sender
         if (victim && victimNum && senderNum && victimNum !== senderNum) {
             isAlone = false
             
             // OBTENER NOMBRE REAL
             if (m.quoted?.pushName) {
-                // Prioridad 1: Nombre del mensaje citado
                 targetName = m.quoted.pushName
             } else if (m.isGroup) {
-                // Prioridad 2: Buscar en metadatos del grupo
                 const groupMetadata = await conn.groupMetadata(m.chat).catch(() => null)
                 const participant = groupMetadata?.participants?.find(p => p.id === victim)
-                
-                if (participant) {
-                    targetName = participant.notify || participant.name || `Usuario ${victimNum.slice(-4)}`
-                } else {
-                    targetName = `Usuario ${victimNum.slice(-4)}`
-                }
+                targetName = participant?.notify || participant?.name || `Usuario ${victimNum.slice(-4)}`
             } else {
-                // Prioridad 3: Chat privado
                 try {
                     const contact = await conn.getContact(victim)
                     targetName = contact?.notify || contact?.name || `Usuario ${victimNum.slice(-4)}`
@@ -61,9 +43,6 @@ export const run = async (m, { conn, db, who }) => {
                 }
             }
         }
-
-        console.log('isAlone:', isAlone)
-        console.log('targetName:', targetName)
 
         // 4. REACCIÓN
         await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })

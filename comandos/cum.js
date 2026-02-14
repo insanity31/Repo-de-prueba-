@@ -43,11 +43,10 @@ export const run = async (m, { conn, db }) => {
                             || ''
                     }
                 }
-            } catch (err) {
-                console.log('Error en conversión LID:', err.message)
-            }
+            } catch {}
         }
 
+        // ========== VALIDACIÓN ==========
         const cleanNumber = (jid) => {
             if (!jid) return null
             return jid.split('@')[0].replace(/:\d+/g, '')
@@ -59,69 +58,59 @@ export const run = async (m, { conn, db }) => {
 
         const senderName = m.pushName || 'Usuario'
         
-        // 🔥 OBTENER NOMBRE USANDO conn.getContact() (API de Baileys)
+        // ========== OBTENER NOMBRE (VERSIÓN OFICIAL DE BAILEYS) ==========
         if (!isAlone && !victimName) {
             try {
-                console.log('🔍 Intentando conn.getContact()...')
-                const contact = await conn.getContact(victimJID)
-                
-                console.log('📱 Contacto obtenido:')
-                console.log(JSON.stringify(contact, null, 2))
-                
-                victimName = contact?.notify 
-                    || contact?.name 
-                    || contact?.verifiedName
-                    || contact?.vname
-                    || ''
-                
-                console.log('   Nombre final:', victimName || '(vacío)')
-            } catch (err) {
-                console.log('❌ Error en getContact:', err.message)
-            }
-        }
-
-        // 🔥 ÚLTIMO RECURSO: onWhatsApp para verificar si el número existe
-        if (!isAlone && !victimName) {
-            try {
-                console.log('🔍 Intentando onWhatsApp()...')
-                const [exists] = await conn.onWhatsApp(victimNum + '@s.whatsapp.net')
-                
-                if (exists) {
-                    console.log('📱 Usuario existe en WhatsApp:')
-                    console.log(JSON.stringify(exists, null, 2))
-                    
-                    victimName = exists?.notify 
-                        || exists?.verifiedName
+                // Método 1: Store de contactos (Baileys oficial)
+                const storeContact = conn.store?.contacts?.[victimJID]
+                if (storeContact) {
+                    victimName = storeContact.notify 
+                        || storeContact.name 
+                        || storeContact.verifiedName 
                         || ''
-                    
-                    console.log('   Nombre final:', victimName || '(vacío)')
                 }
-            } catch (err) {
-                console.log('❌ Error en onWhatsApp:', err.message)
-            }
+                
+                // Método 2: fetchStatus (puede traer el nombre)
+                if (!victimName && typeof conn.fetchStatus === 'function') {
+                    try {
+                        const status = await conn.fetchStatus(victimJID)
+                        victimName = status?.notify || ''
+                    } catch {}
+                }
+                
+                // Método 3: Metadata del grupo (búsqueda final)
+                if (!victimName && m.isGroup) {
+                    const groupMeta = await conn.groupMetadata(m.chat)
+                    const participant = groupMeta.participants.find(p => 
+                        cleanNumber(p.id) === victimNum || p.lid === victimJID
+                    )
+                    
+                    if (participant) {
+                        victimName = participant.notify 
+                            || participant.name 
+                            || participant.verifiedName 
+                            || ''
+                    }
+                }
+            } catch {}
         }
 
-        // Fallback final
+        // Fallback a "Usuario"
         if (!isAlone && !victimName) {
             victimName = 'Usuario'
-            console.log('⚠️ Usando fallback: Usuario')
         }
 
-        // ========== FORMATO ==========
-        let text = ''
-        
-        if (isAlone) {
-            text = `\`${senderName}\` se vino solo... 🥑`
-        } else {
-            text = `💦 ¡Uff! \`${senderName}\` se ha venido sobre \`${victimName}\`!`
-        }
+        // ========== FORMATO CON BACKTICKS ==========
+        const text = isAlone
+            ? `\`${senderName}\` se vino solo... 🥑`
+            : `💦 ¡Uff! \`${senderName}\` se ha venido sobre \`${victimName}\`!`
 
         // ========== REACCIÓN ==========
         await conn.sendMessage(m.chat, { 
             react: { text: '💦', key: m.key } 
         })
 
-        // ========== VIDEO ==========
+        // ========== ENVIAR VIDEO ==========
         const { data } = await axios.get('https://files.catbox.moe/4ws6bs.mp4', {
             responseType: 'arraybuffer'
         })
@@ -135,8 +124,8 @@ export const run = async (m, { conn, db }) => {
         }, { quoted: m })
 
     } catch (e) {
-        console.error('❌ ERROR:', e)
-        m.reply('⚠️ Ocurrió un error')
+        console.error('❌ ERROR EN CUM:', e)
+        m.reply('⚠️ Ocurrió un error al ejecutar el comando')
     }
 }
 

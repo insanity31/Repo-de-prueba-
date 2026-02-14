@@ -18,9 +18,14 @@ export const run = async (m, { conn, db }) => {
         else if (m.quoted?.sender) {
             victim = m.quoted.sender
         }
-        // Opción 3: Parsear mención manual del texto (NUEVO)
+        // Opción 3: Parsear mención manual del texto
         else {
-            const text = m.text || ''
+            // Intentar obtener el texto desde múltiples fuentes
+            const text = m.text || m.body || m.message?.conversation || 
+                         m.message?.extendedTextMessage?.text || ''
+            
+            console.log('📝 Texto capturado:', text)
+            
             const mentionMatch = text.match(/@(\d+)/);
             if (mentionMatch) {
                 victim = mentionMatch[1] + '@s.whatsapp.net'
@@ -31,6 +36,8 @@ export const run = async (m, { conn, db }) => {
         console.log('m.sender:', m.sender)
         console.log('victim original:', victim)
         console.log('m.text:', m.text)
+        console.log('m.body:', m.body)
+        console.log('m.message:', JSON.stringify(m.message, null, 2))
         console.log('m.quoted?.sender:', m.quoted?.sender)
         console.log('m.mentionedJid:', m.mentionedJid)
 

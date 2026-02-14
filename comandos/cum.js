@@ -8,6 +8,10 @@ export const run = async (m, { conn, db }) => {
         }
 
         console.log('========== INICIO CUM ==========')
+        console.log('📋 m.quoted:', m.quoted ? 'SÍ' : 'NO')
+        console.log('📋 m.quoted?.sender:', m.quoted?.sender)
+        console.log('📋 m.quoted?.pushName:', m.quoted?.pushName)
+        console.log('📋 m.message:', JSON.stringify(m.message, null, 2))
 
         // ========== DETECCIÓN DE VÍCTIMA ==========
         let victimLID = null
@@ -19,12 +23,27 @@ export const run = async (m, { conn, db }) => {
             victimLID = m.message.extendedTextMessage.contextInfo.mentionedJid[0]
             console.log('✅ LID detectado desde mención:', victimLID)
         }
-        // 2. Mensaje citado
-        else if (m.quoted?.sender) {
-            victimJID = m.quoted.sender
-            victimName = m.quoted.pushName || '' // Ya tenemos el nombre!
+        // 2. Mensaje citado - MEJORADO
+        else if (m.quoted) {
+            console.log('🔍 Analizando mensaje citado...')
+            
+            // Intentar obtener el sender del quoted
+            victimJID = m.quoted.sender 
+                || m.message?.extendedTextMessage?.contextInfo?.participant
+                || null
+                
+            victimName = m.quoted.pushName || ''
+            
             console.log('✅ JID detectado desde quote:', victimJID)
             console.log('✅ Nombre desde quote:', victimName)
+            
+            // Si el JID es un LID, marcarlo para conversión
+            if (victimJID && victimJID.endsWith('@lid')) {
+                console.log('⚠️ El quoted sender es un LID, se convertirá')
+                victimLID = victimJID
+                victimJID = null
+                victimName = ''
+            }
         }
 
         // ========== SI HAY LID, CONVERTIR A JID Y OBTENER NOMBRE ==========
@@ -36,11 +55,14 @@ export const run = async (m, { conn, db }) => {
                 
                 if (participant) {
                     victimJID = participant.jid || participant.id
-                    // 🔥 PRIORIDAD: notify > name > verifiedName > número
-                    victimName = participant.notify 
-                        || participant.name 
-                        || participant.verifiedName 
-                        || ''
+                    
+                    // Si no tenemos nombre del quote, buscarlo en metadata
+                    if (!victimName) {
+                        victimName = participant.notify 
+                            || participant.name 
+                            || participant.verifiedName 
+                            || ''
+                    }
                     
                     console.log('✅ JID obtenido:', victimJID)
                     console.log('✅ Nombre obtenido:', victimName || '(sin nombre)')
@@ -72,9 +94,8 @@ export const run = async (m, { conn, db }) => {
         // ========== NOMBRE FINAL ==========
         const senderName = m.pushName || 'Usuario'
         
-        // Si no tenemos nombre aún, usar el número
         if (!isAlone && !victimName) {
-            victimName = `+${victimNum}`
+            victimName = `@${victimNum}`
         }
 
         console.log('Nombre final de víctima:', victimName)

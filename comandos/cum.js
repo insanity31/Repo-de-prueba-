@@ -15,6 +15,13 @@ export const run = async (m, { conn, db }) => {
             victim = m.quoted.sender
         }
 
+        // 🔍 DEBUG: Ver qué se está capturando
+        console.log('🔍 DEBUG CUM:')
+        console.log('m.sender:', m.sender)
+        console.log('victim original:', victim)
+        console.log('m.quoted?.sender:', m.quoted?.sender)
+        console.log('m.mentionedJid:', m.mentionedJid)
+
         // --- CONVERSIÓN DE LID A JID (Solo en grupos) ---
         if (victim && victim.endsWith('@lid') && m.isGroup) {
             const groupMetadata = await conn.groupMetadata(m.chat).catch(() => null)
@@ -22,14 +29,17 @@ export const run = async (m, { conn, db }) => {
                 p.lid === victim || p.id === victim
             )
             if (participant?.id) {
+                console.log('✅ LID convertido a JID:', participant.id)
                 victim = participant.id
             } else {
+                console.log('❌ No se pudo convertir LID')
                 victim = null
             }
         }
 
         // 2. VALIDACIÓN: Asegurar que victim sea JID válido
-        if (victim && !victim.endsWith('@s.whatsapp.net')) {
+        if (victim && !victim.endsWith('@s.whatsapp.net') && !victim.endsWith('@lid')) {
+            console.log('❌ JID inválido:', victim)
             victim = null
         }
 
@@ -39,24 +49,30 @@ export const run = async (m, { conn, db }) => {
         let isAlone = true
 
         // Limpieza segura de números
-        const cleanNum = (jid) => jid?.split('@')[0]?.replace(/:\d+/, '') || ''
+        const cleanNum = (jid) => {
+            if (!jid) return ''
+            return jid.split('@')[0].replace(/:\d+/g, '').trim()
+        }
+
         const senderNum = cleanNum(m.sender)
         const victimNum = cleanNum(victim)
 
-        if (victim && victimNum && victimNum !== senderNum) {
+        console.log('senderNum:', senderNum)
+        console.log('victimNum:', victimNum)
+        console.log('Son iguales?:', senderNum === victimNum)
+
+        // 🔥 CORRECCIÓN: Verificar que victim exista Y sea diferente
+        if (victim && victimNum && senderNum && victimNum !== senderNum) {
             isAlone = false
             
-            // 🔥 OBTENER NOMBRE REAL (nunca mostrar LID/número)
+            // OBTENER NOMBRE REAL
             if (m.quoted?.pushName) {
-                // Prioridad 1: Nombre del mensaje citado
                 targetName = m.quoted.pushName
             } else {
-                // Prioridad 2: Nombre guardado en contactos del bot
                 const contactName = conn.getName(victim)
                 if (contactName && !contactName.includes('@') && contactName !== victimNum) {
                     targetName = contactName
                 } else {
-                    // Prioridad 3: Buscar en metadatos del grupo
                     if (m.isGroup) {
                         const groupMetadata = await conn.groupMetadata(m.chat).catch(() => null)
                         const participant = groupMetadata?.participants?.find(p => p.id === victim)
@@ -68,10 +84,13 @@ export const run = async (m, { conn, db }) => {
             }
         }
 
+        console.log('isAlone:', isAlone)
+        console.log('targetName:', targetName)
+
         // 4. REACCIÓN
         await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })
 
-        // 5. TEXTO (sin menciones numéricas, solo nombres)
+        // 5. TEXTO
         let txt = isAlone 
             ? `*${nameSender}* se vino solo... 🥑` 
             : `💦 ¡Uff! *${nameSender}* se ha venido sobre *${targetName}*!`

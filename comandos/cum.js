@@ -2,44 +2,57 @@ import axios from 'axios'
 
 export const run = async (m, { conn, db }) => {
     try {
+        // --- RESTRICCIÓN NSFW ---
         if (m.isGroup && !db?.chats?.[m.chat]?.nsfw) {
             return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#enable nsfw on*`);
         }
 
-        let victim = m.mentionedJid?.[0] || m.quoted?.sender || null;
-        let nameSender = m.pushName || 'Usuario';
-        let targetName = '';
-        let isAlone = true;
+        // 1. OBTENCIÓN MANUAL DEL CITADO (Directo de la estructura de Baileys)
+        // Buscamos el mensaje citado incluso si smsg falló
+        let quoted = m.msg?.contextInfo?.quotedMessage ? m.msg.contextInfo : null
+        let victim = m.quoted ? m.quoted.sender : (m.msg?.contextInfo?.participant || null)
+        
+        // 2. LÓGICA DE DETECCIÓN
+        let nameSender = m.pushName || 'Usuario'
+        let targetName = ''
+        let isAlone = true
 
+        // Si hay una víctima detectada y NO soy yo mismo
         if (victim && victim !== m.sender) {
-            isAlone = false;
-            targetName = await conn.getName(victim);
+            isAlone = false
+            // Intentamos sacar el nombre, si no, el número
+            targetName = m.quoted?.pushName || `@${victim.split('@')[0]}`
+        } else {
+            targetName = 'sí mismo'
         }
 
-        await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } });
+        // 3. REACCIÓN
+        await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })
 
+        // 4. TEXTO
         let txt = isAlone 
             ? `*${nameSender}* se vino solo... 🥑` 
-            : `*${nameSender}* se vino dentro de *${targetName}*`;
+            : `💦 ¡Uff! *${nameSender}* se ha venido sobre *${targetName}*!`
 
-        const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4';
-        const { data } = await axios.get(videoUrl, { responseType: 'arraybuffer' });
+        // 5. VIDEO
+        const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4'
+        const { data } = await axios.get(videoUrl, { responseType: 'arraybuffer' })
 
         await conn.sendMessage(m.chat, { 
             video: Buffer.from(data), 
-            mimetype: 'video/mp4', 
+            mimetype: 'video/mp4',
             caption: txt, 
-            gifPlayback: true, 
+            gifPlayback: true,
             mentions: [m.sender, victim].filter(v => v) 
-        }, { quoted: m });
+        }, { quoted: m })
 
     } catch (e) {
-        console.error(e);
+        console.error("ERROR EN CUM:", e)
     }
 }
 
 export const config = {
     name: 'cum',
-    alias: ['correrse', 'leche', 'venirse'],
-    group: true
+    alias: ['correrse'],
+    group: true 
 }

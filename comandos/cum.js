@@ -7,18 +7,30 @@ export const run = async (m, { conn, db }) => {
             return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#enable nsfw on*`);
         }
 
-        // 1. OBTENCIÓN DEL OBJETIVO
+        // 1. OBTENCIÓN DEL OBJETIVO (MEJORADO)
         let victim = null
+        
+        // Opción 1: Menciones parseadas por el sistema
         if (m.mentionedJid && m.mentionedJid[0]) {
             victim = m.mentionedJid[0]
-        } else if (m.quoted?.sender) {
+        } 
+        // Opción 2: Mensaje citado
+        else if (m.quoted?.sender) {
             victim = m.quoted.sender
         }
+        // Opción 3: Parsear mención manual del texto (NUEVO)
+        else {
+            const text = m.text || ''
+            const mentionMatch = text.match(/@(\d+)/);
+            if (mentionMatch) {
+                victim = mentionMatch[1] + '@s.whatsapp.net'
+            }
+        }
 
-        // 🔍 DEBUG: Ver qué se está capturando
         console.log('🔍 DEBUG CUM:')
         console.log('m.sender:', m.sender)
         console.log('victim original:', victim)
+        console.log('m.text:', m.text)
         console.log('m.quoted?.sender:', m.quoted?.sender)
         console.log('m.mentionedJid:', m.mentionedJid)
 
@@ -61,7 +73,7 @@ export const run = async (m, { conn, db }) => {
         console.log('victimNum:', victimNum)
         console.log('Son iguales?:', senderNum === victimNum)
 
-        // 🔥 CORRECCIÓN: Verificar que victim exista Y sea diferente
+        // Verificar que victim exista Y sea diferente
         if (victim && victimNum && senderNum && victimNum !== senderNum) {
             isAlone = false
             

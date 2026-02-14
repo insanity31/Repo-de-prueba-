@@ -176,5 +176,6 @@ export const handler = async (m, conn, comandos) => {
 
     } catch (e) {
         console.log(chalk.red(`[ERROR HANDLER]:`), e);
-        m.reply('❌ Ocurrió un error al ejecutar el comando.');}
-    
+        m.reply('❌ Ocurrió un error al ejecutar el comando.');
+    }
+}; 

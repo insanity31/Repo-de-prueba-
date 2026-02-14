@@ -32,13 +32,18 @@ export const handler = async (m, conn, comandos) => {
         const isGroup = m.isGroup;
         const isAdmin = m.isGroup ? (m.participant && m.isGroup ? (await conn.groupMetadata(m.chat)).participants.find(p => p.id === m.sender).admin : false) : false;
 
-        // 6. DETECCIÓN DE OBJETIVO MEJORADA (La solución definitiva)
-        // Buscamos mención, luego citado, y si no hay nada, el sender
-        let who = m.mentionedJid && m.mentionedJid[0] 
-            ? m.mentionedJid[0] 
-            : (m.quoted ? m.quoted.sender : m.sender);
+        // 6. DETECCIÓN DE OBJETIVO MEJORADA
+        // 🔥 CAMBIO: Solo asignar 'who' si hay mención O quote, sino null
+        let who = null;
+        
+        if (m.mentionedJid && m.mentionedJid[0]) {
+            who = m.mentionedJid[0];
+        } else if (m.quoted?.sender) {
+            who = m.quoted.sender;
+        }
+        // ❌ REMOVIDO: No hacer fallback a m.sender
 
-        // Limpieza de ID (quitar :1, :2 etc)
+        // Limpieza de ID (quitar :1, :2 etc) solo si who existe
         if (who) {
             who = who.split('@')[0].split(':')[0] + '@s.whatsapp.net';
         }
@@ -54,7 +59,7 @@ export const handler = async (m, conn, comandos) => {
             isOwner, 
             isAdmin,
             isGroup, 
-            who, // Ahora 'who' llegará limpio y detectado al comando
+            who, // Ahora será null si no hay mención/quote
             db: database.data 
         });
 

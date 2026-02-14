@@ -7,8 +7,6 @@ export const run = async (m, { conn, db }) => {
             return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#enable nsfw on*`);
         }
 
-        console.log('========== DEBUG COMPLETO ==========')
-
         // ========== DETECCIÓN DE VÍCTIMA ==========
         let victimJID = null
         let victimName = ''
@@ -19,22 +17,16 @@ export const run = async (m, { conn, db }) => {
         
         if (mentions.length > 0) {
             victimJID = mentions[0]
-            console.log('✅ Detectado por MENCIÓN:', victimJID)
         } else if (quotedParticipant) {
             victimJID = quotedParticipant
             victimName = m.quoted?.pushName || ''
-            console.log('✅ Detectado por QUOTED PARTICIPANT:', victimJID)
-            console.log('   pushName del quote:', victimName)
         } else if (quotedSender) {
             victimJID = quotedSender
             victimName = m.quoted?.pushName || ''
-            console.log('✅ Detectado por QUOTED SENDER:', victimJID)
-            console.log('   pushName del quote:', victimName)
         }
 
-        // ========== CONVERSIÓN DE LID ==========
+        // ========== CONVERSIÓN DE LID A JID ==========
         if (victimJID && victimJID.includes('@lid') && m.isGroup) {
-            console.log('⚠️ LID detectado, convirtiendo...')
             try {
                 const groupMeta = await conn.groupMetadata(m.chat)
                 const participant = groupMeta.participants.find(p => 
@@ -42,30 +34,17 @@ export const run = async (m, { conn, db }) => {
                 )
                 
                 if (participant) {
-                    console.log('📋 PARTICIPANTE COMPLETO:')
-                    console.log(JSON.stringify(participant, null, 2))
-                    
                     victimJID = participant.jid || participant.id
                     
                     if (!victimName) {
                         victimName = participant.notify 
                             || participant.name 
-                            || participant.verifiedName
-                            || participant.vname
-                            || participant.subject
+                            || participant.verifiedName 
                             || ''
-                        
-                        console.log('🔍 Nombres encontrados:')
-                        console.log('   notify:', participant.notify)
-                        console.log('   name:', participant.name)
-                        console.log('   verifiedName:', participant.verifiedName)
-                        console.log('   vname:', participant.vname)
-                        console.log('   subject:', participant.subject)
-                        console.log('   NOMBRE FINAL:', victimName || '(vacío)')
                     }
                 }
             } catch (err) {
-                console.log('❌ Error:', err.message)
+                console.log('Error en conversión LID:', err.message)
             }
         }
 
@@ -80,44 +59,53 @@ export const run = async (m, { conn, db }) => {
 
         const senderName = m.pushName || 'Usuario'
         
-        // ========== BÚSQUEDA FINAL SI NO HAY NOMBRE ==========
-        if (!isAlone && !victimName && m.isGroup) {
-            console.log('⚠️ Sin nombre aún, buscando en metadata...')
+        // 🔥 OBTENER NOMBRE USANDO conn.getContact() (API de Baileys)
+        if (!isAlone && !victimName) {
             try {
-                const groupMeta = await conn.groupMetadata(m.chat)
-                const participant = groupMeta.participants.find(p => 
-                    cleanNumber(p.id) === victimNum || p.lid === victimJID
-                )
+                console.log('🔍 Intentando conn.getContact()...')
+                const contact = await conn.getContact(victimJID)
                 
-                if (participant) {
-                    console.log('📋 PARTICIPANTE ENCONTRADO EN BÚSQUEDA:')
-                    console.log(JSON.stringify(participant, null, 2))
-                    
-                    victimName = participant.notify 
-                        || participant.name 
-                        || participant.verifiedName
-                        || participant.vname
-                        || participant.subject
-                        || ''
-                    
-                    console.log('   NOMBRE OBTENIDO:', victimName || '(vacío)')
-                }
+                console.log('📱 Contacto obtenido:')
+                console.log(JSON.stringify(contact, null, 2))
+                
+                victimName = contact?.notify 
+                    || contact?.name 
+                    || contact?.verifiedName
+                    || contact?.vname
+                    || ''
+                
+                console.log('   Nombre final:', victimName || '(vacío)')
             } catch (err) {
-                console.log('❌ Error en búsqueda:', err.message)
+                console.log('❌ Error en getContact:', err.message)
             }
         }
 
-        // Fallback a "Usuario"
+        // 🔥 ÚLTIMO RECURSO: onWhatsApp para verificar si el número existe
+        if (!isAlone && !victimName) {
+            try {
+                console.log('🔍 Intentando onWhatsApp()...')
+                const [exists] = await conn.onWhatsApp(victimNum + '@s.whatsapp.net')
+                
+                if (exists) {
+                    console.log('📱 Usuario existe en WhatsApp:')
+                    console.log(JSON.stringify(exists, null, 2))
+                    
+                    victimName = exists?.notify 
+                        || exists?.verifiedName
+                        || ''
+                    
+                    console.log('   Nombre final:', victimName || '(vacío)')
+                }
+            } catch (err) {
+                console.log('❌ Error en onWhatsApp:', err.message)
+            }
+        }
+
+        // Fallback final
         if (!isAlone && !victimName) {
             victimName = 'Usuario'
             console.log('⚠️ Usando fallback: Usuario')
         }
-
-        console.log('========== RESULTADO FINAL ==========')
-        console.log('Sender:', senderName)
-        console.log('Victim:', victimName)
-        console.log('¿Solo?:', isAlone)
-        console.log('====================================')
 
         // ========== FORMATO ==========
         let text = ''

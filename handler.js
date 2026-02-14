@@ -46,16 +46,29 @@ export const handler = async (m, conn, comandos) => {
         
         // Admin del grupo
         const isGroup = m.isGroup;
-        const isAdmin = isGroup ? (await conn.groupMetadata(m.chat))
-            .participants.find(p => p.id === m.sender)?.admin !== undefined : false;
-        
-        // Bot admin del grupo
-        const isBotAdmin = isGroup ? (await conn.groupMetadata(m.chat))
-            .participants.find(p => p.id === conn.user.id)?.admin !== undefined : false;
+        let isAdmin = false;
+        let isBotAdmin = false;
+
+        if (isGroup) {
+            try {
+                const groupMeta = await conn.groupMetadata(m.chat);
+                const participant = groupMeta.participants.find(p => p.id === m.sender);
+                isAdmin = participant?.admin !== undefined;
+                
+                const botParticipant = groupMeta.participants.find(p => p.id === conn.user.id);
+                isBotAdmin = botParticipant?.admin !== undefined;
+            } catch (err) {
+                console.log(chalk.red('[ERROR GROUP META]'), err.message);
+            }
+        }
 
         // ========== 6. REGISTRO DE USUARIO ==========
         
         // Auto-crear usuario en la base de datos si no existe
+        if (!database.data.users) {
+            database.data.users = {};
+        }
+
         if (!database.data.users[m.sender]) {
             database.data.users[m.sender] = {
                 registered: false,
@@ -164,4 +177,4 @@ export const handler = async (m, conn, comandos) => {
     } catch (e) {
         console.log(chalk.red(`[ERROR HANDLER]:`), e);
         m.reply('❌ Ocurrió un error al ejecutar el comando.');
-    }
+    

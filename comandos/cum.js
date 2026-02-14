@@ -1,68 +1,49 @@
 import axios from 'axios'
 
-// Limpieza total: solo números
-const cleanNumber = (jid) => jid ? jid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '') : ''
-
 export const run = async (m, { conn, db }) => {
     try {
-        // 0. Verificación NSFW
+        // 1. RESTRICCIÓN NSFW (Basada en tu comando #enable nsfw)
         if (m.isGroup && !db?.chats?.[m.chat]?.nsfw) {
-            return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Actívalo con: \`.enable nsfw on\``)
+            return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#enable nsfw on*`);
         }
 
-        // 1. OBTENCIÓN DEL OBJETIVO (Triple Check)
+        // 2. OBTENCIÓN DEL OBJETIVO (Mención > Citado > Contexto)
         let victim = null
-        const text = m.text || m.body || ''
-        
-        // Prioridad 1: Mención oficial de Baileys
-        if (m.mentionedJid && m.mentionedJid.length > 0) {
+        if (m.mentionedJid && m.mentionedJid[0]) {
             victim = m.mentionedJid[0]
-        } 
-        // Prioridad 2: Extracción manual por texto (Si el handler falla)
-        else if (text.includes('@')) {
-            const extract = text.match(/@(\d+)/)
-            if (extract) victim = extract[1] + '@s.whatsapp.net'
-        }
-        // Prioridad 3: Mensaje citado
-        if (!victim && m.quoted) {
+        } else if (m.quoted) {
             victim = m.quoted.sender
+        } else {
+            victim = m.msg?.contextInfo?.participant || null
         }
-
-        // 2. LÓGICA DE IDENTIDADES
-        const senderNum = cleanNumber(m.sender)
-        const victimNum = cleanNumber(victim)
         
+        // 3. LÓGICA DE DETECCIÓN
         let nameSender = m.pushName || 'Usuario'
         let targetName = ''
         let isAlone = true
 
-        // Si hay un número de víctima y no es el mío
-        if (victimNum && victimNum !== senderNum) {
+        // Limpieza de IDs para comparar (evita errores de multidispositivo :1)
+        const self = m.sender.split('@')[0].split(':')[0]
+        const target = victim ? victim.split('@')[0].split(':')[0] : null
+
+        if (target && target !== self) {
             isAlone = false
+            // Intentamos sacar el nombre, si no, el número limpio
+            targetName = (m.quoted && m.quoted.pushName) ? m.quoted.pushName : (conn.getName ? conn.getName(victim) : `@${target}`)
             
-            // Intentar sacar nombre
-            if (m.quoted && m.quoted.sender === victim && m.quoted.pushName) {
-                targetName = m.quoted.pushName
-            } else {
-                // Si conn.getName falla, usamos el número limpio
-                try {
-                    let n = conn.getName(victim)
-                    targetName = (n && !n.includes('@')) ? n : `@${victimNum}`
-                } catch {
-                    targetName = `@${victimNum}`
-                }
-            }
+            // Si el nombre sigue trayendo el JID, lo limpiamos
+            if (targetName.includes('@')) targetName = targetName.split('@')[0]
         }
 
-        // 3. REACCIÓN
+        // 4. REACCIÓN
         await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })
 
-        // 4. TEXTO
+        // 5. TEXTO CON FORMATO
         let txt = isAlone 
-            ? `\`${nameSender}\` se vino solo... 🥑` 
-            : `💦 ¡Uff! \`${nameSender}\` se ha venido sobre \`${targetName}\`!`
+            ? `*${nameSender}* se vino solo... 🥑` 
+            : `💦 ¡Uff! *${nameSender}* se ha venido sobre *${targetName}*!`
 
-        // 5. VIDEO
+        // 6. ENVÍO DE VIDEO
         const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4'
         const { data } = await axios.get(videoUrl, { responseType: 'arraybuffer' })
 
@@ -71,7 +52,7 @@ export const run = async (m, { conn, db }) => {
             mimetype: 'video/mp4',
             caption: txt, 
             gifPlayback: true,
-            mentions: [m.sender, victim].filter(Boolean) 
+            mentions: [m.sender, victim].filter(v => v) 
         }, { quoted: m })
 
     } catch (e) {
@@ -81,6 +62,6 @@ export const run = async (m, { conn, db }) => {
 
 export const config = {
     name: 'cum',
-    alias: ['leche', 'correrse'],
+    alias: ['correrse', 'leche', 'venirse'],
     group: true 
 }

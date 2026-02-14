@@ -1,109 +1,142 @@
-//Mejore el código a uno de saludo pero el video gif no cambia.
-//Es un objeto de prueba nada mas.
-
 import axios from 'axios'
-import fetch from 'node-fetch' 
 
 export const run = async (m, { conn, db }) => {
     try {
-        // 1. OBTENCIÓN DEL OBJETIVO (Mención, Texto o Citado)
-        let victim = null
+        // ========== DETECCIÓN DE VÍCTIMA ==========
+        let victimJID = null
+        let victimName = ''
         
-        // A. Intentar por mención oficial
-        if (m.mentionedJid && m.mentionedJid.length > 0) {
-            victim = m.mentionedJid[0]
-        } 
-        // B. Intentar por búsqueda manual en el texto (Si el handler falla)
-        else {
-            const text = m.text || m.body || ''
-            const extract = text.match(/@(\d+)/)
-            if (extract) {
-                victim = extract[1] + '@s.whatsapp.net'
-            }
+        const mentions = m.mentionedJid || []
+        const quotedSender = m.quoted?.sender
+        
+        if (mentions.length > 0) {
+            victimJID = mentions[0]
+        } else if (quotedSender) {
+            victimJID = quotedSender
+            victimName = m.quoted?.pushName || ''
         }
-        // C. Intentar por mensaje citado
-        if (!victim && m.quoted) {
-            victim = m.quoted.sender
-        }
-        
-        // 2. LÓGICA DE DETECCIÓN
-        let nameSender = m.pushName || await conn.getName(m.sender) || 'Usuario'
-        let targetName = ''
-        let isAlone = true
-        
-        // Limpiar números
-        const senderNum = m.sender.replace(/[^0-9]/g, '')
-        const victimNum = victim ? victim.replace(/[^0-9]/g, '') : null
-        
-        // Array de menciones para el mensaje
-        let mentions = [m.sender]
-        
-        if (victimNum && victimNum !== senderNum) {
-            isAlone = false
-            
-            // Intentar obtener el nombre del objetivo
-            let victimName = ''
-            
-            // 1. Intentar obtener nombre del mensaje citado
-            if (m.quoted && m.quoted.sender === victim) {
-                victimName = m.quoted.pushName || ''
-            }
-            
-            // 2. Si no hay nombre, intentar con conn.getName
-            if (!victimName) {
-                try {
-                    victimName = await conn.getName(victim)
-                } catch (e) {
-                    victimName = ''
+
+        // ========== CONVERSIÓN DE LID A JID ==========
+        if (victimJID && victimJID.includes('@lid') && m.isGroup) {
+            try {
+                const groupMeta = await conn.groupMetadata(m.chat)
+                const participant = groupMeta.participants.find(p => 
+                    p.lid === victimJID || p.id === victimJID
+                )
+                
+                if (participant) {
+                    victimJID = participant.jid || participant.id
+                    
+                    if (!victimName) {
+                        victimName = participant.notify 
+                            || participant.name 
+                            || participant.verifiedName 
+                            || ''
+                    }
                 }
+            } catch (err) {
+                console.log('Error LID:', err.message)
             }
-            
-            // 3. Si el nombre contiene @ o está vacío, usar el número
-            if (!victimName || victimName.includes('@s.whatsapp.net')) {
-                victimName = victimNum
+        }
+
+        // ========== LIMPIAR NÚMEROS ==========
+        const cleanNumber = (jid) => {
+            if (!jid) return null
+            return jid.split('@')[0].replace(/:\d+/g, '')
+        }
+
+        const senderNum = cleanNumber(m.sender)
+        const victimNum = cleanNumber(victimJID)
+
+        // ========== VALIDAR SI ESTÁ SOLO ==========
+        const isAlone = !victimJID || senderNum === victimNum
+
+        // ========== OBTENER NOMBRES ==========
+        const senderName = m.pushName || db.users?.[m.sender]?.name || 'Usuario'
+        
+        if (!isAlone && !victimName) {
+            try {
+                // Método 1: Store de contactos (si existe)
+                if (conn.contacts) {
+                    const contact = conn.contacts[victimJID]
+                    if (contact) {
+                        victimName = contact.notify 
+                            || contact.name 
+                            || contact.verifiedName 
+                            || ''
+                    }
+                }
+                
+                // Método 2: Base de datos local
+                if (!victimName && db.users?.[victimJID]) {
+                    victimName = db.users[victimJID].name || ''
+                }
+                
+                // Método 3: Metadata del grupo
+                if (!victimName && m.isGroup) {
+                    const groupMeta = await conn.groupMetadata(m.chat)
+                    const participant = groupMeta.participants.find(p => 
+                        cleanNumber(p.id) === victimNum || p.lid === victimJID
+                    )
+                    
+                    if (participant) {
+                        victimName = participant.notify 
+                            || participant.name 
+                            || participant.verifiedName 
+                            || ''
+                    }
+                }
+
+                // Método 4: getName si existe
+                if (!victimName && typeof conn.getName === 'function') {
+                    try {
+                        const name = await conn.getName(victimJID)
+                        if (name && !name.includes('+') && !/^\d+$/.test(name)) {
+                            victimName = name
+                        }
+                    } catch {}
+                }
+            } catch (err) {
+                console.log('Error obteniendo nombre:', err.message)
             }
-            
-            targetName = victimName
-            mentions.push(victim)
         }
-        
-        // 3. REACCIÓN
-        await conn.sendMessage(m.chat, { react: { text: '👋', key: m.key } })
-        
-        // 4. TEXTO con menciones correctas
-        let txt = isAlone 
-            ? `@${senderNum} se saluda solo 👋` 
-            : `@${senderNum} saluda a @${victimNum} 👋`
-        
-        // 5. VIDEO
-        const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4' // Catbox a veces falla xd
-        
-        try {
-            const { data } = await axios.get(videoUrl, { responseType: 'arraybuffer' })
-            
-            await conn.sendMessage(m.chat, { 
-                video: Buffer.from(data), 
-                mimetype: 'video/mp4',
-                caption: txt, 
-                gifPlayback: true,
-                mentions: mentions
-            }, { quoted: m })
-        } catch (videoError) {
-            // Si falla el video, solo enviar el texto
-            await conn.sendMessage(m.chat, { 
-                text: txt,
-                mentions: mentions
-            }, { quoted: m })
+
+        // Fallback a "Usuario"
+        if (!isAlone && !victimName) {
+            victimName = 'Usuario'
         }
-        
+
+        // ========== FORMATO CON BACKTICKS ==========
+        const text = isAlone
+            ? `\`${senderName}\` se vino solo... 🥑`
+            : `💦 ¡Uff! \`${senderName}\` se ha venido sobre \`${victimName}\`!`
+
+        // ========== REACCIÓN ==========
+        await m.react('💦')
+
+        // ========== ENVIAR VIDEO ==========
+        const { data } = await axios.get('https://files.catbox.moe/4ws6bs.mp4', {
+            responseType: 'arraybuffer'
+        })
+
+        await conn.sendMessage(m.chat, {
+            video: Buffer.from(data),
+            mimetype: 'video/mp4',
+            caption: text,
+            gifPlayback: true,
+            mentions: [] // Sin menciones porque usamos nombres con backticks
+        }, { quoted: m })
+
     } catch (e) {
-        console.error("ERROR:", e)
-        await conn.reply(m.chat, e.message, m)
+        console.error('❌ ERROR EN CUM:', e)
+        m.reply('⚠️ Ocurrió un error al ejecutar el comando')
     }
 }
 
 export const config = {
-    name: 'hola',
-    alias: ['reacts'],
-    group: true 
+    name: 'cum',
+    alias: ['correrse'],
+    description: 'Comando NSFW',
+    group: true,
+    register: true  // Requiere registro para usar
 }

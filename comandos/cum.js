@@ -7,24 +7,16 @@ export const run = async (m, { conn, db }) => {
             return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#enable nsfw on*`);
         }
 
-        // 1. OBTENCIÓN DEL OBJETIVO (MEJORADO)
+        // 1. OBTENCIÓN DEL OBJETIVO
         let victim = null
         
-        // Opción 1: Menciones parseadas por el sistema
         if (m.mentionedJid && m.mentionedJid[0]) {
             victim = m.mentionedJid[0]
-        } 
-        // Opción 2: Mensaje citado
-        else if (m.quoted?.sender) {
+        } else if (m.quoted?.sender) {
             victim = m.quoted.sender
-        }
-        // Opción 3: Parsear mención manual del texto
-        else {
-            // Intentar obtener el texto desde múltiples fuentes
+        } else {
             const text = m.text || m.body || m.message?.conversation || 
                          m.message?.extendedTextMessage?.text || ''
-            
-            console.log('📝 Texto capturado:', text)
             
             const mentionMatch = text.match(/@(\d+)/);
             if (mentionMatch) {
@@ -32,33 +24,21 @@ export const run = async (m, { conn, db }) => {
             }
         }
 
-        console.log('🔍 DEBUG CUM:')
-        console.log('m.sender:', m.sender)
-        console.log('victim original:', victim)
-        console.log('m.text:', m.text)
-        console.log('m.body:', m.body)
-        console.log('m.message:', JSON.stringify(m.message, null, 2))
-        console.log('m.quoted?.sender:', m.quoted?.sender)
-        console.log('m.mentionedJid:', m.mentionedJid)
-
-        // --- CONVERSIÓN DE LID A JID (Solo en grupos) ---
+        // --- CONVERSIÓN DE LID A JID ---
         if (victim && victim.endsWith('@lid') && m.isGroup) {
             const groupMetadata = await conn.groupMetadata(m.chat).catch(() => null)
             const participant = groupMetadata?.participants?.find(p => 
                 p.lid === victim || p.id === victim
             )
             if (participant?.id) {
-                console.log('✅ LID convertido a JID:', participant.id)
                 victim = participant.id
             } else {
-                console.log('❌ No se pudo convertir LID')
                 victim = null
             }
         }
 
-        // 2. VALIDACIÓN: Asegurar que victim sea JID válido
+        // 2. VALIDACIÓN DE JID
         if (victim && !victim.endsWith('@s.whatsapp.net') && !victim.endsWith('@lid')) {
-            console.log('❌ JID inválido:', victim)
             victim = null
         }
 
@@ -67,7 +47,6 @@ export const run = async (m, { conn, db }) => {
         let targetName = ''
         let isAlone = true
 
-        // Limpieza segura de números
         const cleanNum = (jid) => {
             if (!jid) return ''
             return jid.split('@')[0].replace(/:\d+/g, '').trim()
@@ -76,35 +55,33 @@ export const run = async (m, { conn, db }) => {
         const senderNum = cleanNum(m.sender)
         const victimNum = cleanNum(victim)
 
-        console.log('senderNum:', senderNum)
-        console.log('victimNum:', victimNum)
-        console.log('Son iguales?:', senderNum === victimNum)
-
-        // Verificar que victim exista Y sea diferente
         if (victim && victimNum && senderNum && victimNum !== senderNum) {
             isAlone = false
             
-            // OBTENER NOMBRE REAL
+            // 🔥 OBTENER NOMBRE SIN usar conn.getName()
             if (m.quoted?.pushName) {
+                // Nombre del mensaje citado
                 targetName = m.quoted.pushName
-            } else {
-                const contactName = conn.getName(victim)
-                if (contactName && !contactName.includes('@') && contactName !== victimNum) {
-                    targetName = contactName
+            } else if (m.isGroup) {
+                // Buscar en metadatos del grupo
+                const groupMetadata = await conn.groupMetadata(m.chat).catch(() => null)
+                const participant = groupMetadata?.participants?.find(p => p.id === victim)
+                
+                if (participant) {
+                    targetName = participant.notify || participant.name || `Usuario ${victimNum.slice(-4)}`
                 } else {
-                    if (m.isGroup) {
-                        const groupMetadata = await conn.groupMetadata(m.chat).catch(() => null)
-                        const participant = groupMetadata?.participants?.find(p => p.id === victim)
-                        targetName = participant?.notify || participant?.name || `Usuario ${victimNum.slice(-4)}`
-                    } else {
-                        targetName = `Usuario ${victimNum.slice(-4)}`
-                    }
+                    targetName = `Usuario ${victimNum.slice(-4)}`
+                }
+            } else {
+                // Chat privado: intentar obtener del contacto
+                try {
+                    const contact = await conn.getContact(victim)
+                    targetName = contact?.notify || contact?.name || `Usuario ${victimNum.slice(-4)}`
+                } catch {
+                    targetName = `Usuario ${victimNum.slice(-4)}`
                 }
             }
         }
-
-        console.log('isAlone:', isAlone)
-        console.log('targetName:', targetName)
 
         // 4. REACCIÓN
         await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })

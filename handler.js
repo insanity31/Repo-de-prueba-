@@ -27,43 +27,141 @@ export const handler = async (m, conn, comandos) => {
 
         if (!cmd) return;
 
-        // 5. Sistema de permisos
-        const isOwner = global.owner.some(o => o[0] === m.sender.split('@')[0]);
-        const isGroup = m.isGroup;
-        const isAdmin = m.isGroup ? (m.participant && m.isGroup ? (await conn.groupMetadata(m.chat)).participants.find(p => p.id === m.sender).admin : false) : false;
-
-        // 6. DETECCIÓN DE OBJETIVO MEJORADA
-        // 🔥 CAMBIO: Solo asignar 'who' si hay mención O quote, sino null
-        let who = null;
+        // ========== 5. SISTEMA DE PERMISOS COMPLETO ==========
         
+        // Limpiar número de usuario
+        const userNumber = m.sender.split('@')[0].split(':')[0];
+        
+        // Owner (propietario principal)
+        const isOwner = global.owner.some(o => o[0] === userNumber);
+        
+        // ROwner (propietarios secundarios/co-owners)
+        const isROwner = global.rowner?.some(r => r[0] === userNumber) || false;
+        
+        // Premium (usuarios premium)
+        const isPremium = database.data.users?.[m.sender]?.premium || false;
+        
+        // Registrado
+        const isRegistered = database.data.users?.[m.sender]?.registered || false;
+        
+        // Admin del grupo
+        const isGroup = m.isGroup;
+        const isAdmin = isGroup ? (await conn.groupMetadata(m.chat))
+            .participants.find(p => p.id === m.sender)?.admin !== undefined : false;
+        
+        // Bot admin del grupo
+        const isBotAdmin = isGroup ? (await conn.groupMetadata(m.chat))
+            .participants.find(p => p.id === conn.user.id)?.admin !== undefined : false;
+
+        // ========== 6. REGISTRO DE USUARIO ==========
+        
+        // Auto-crear usuario en la base de datos si no existe
+        if (!database.data.users[m.sender]) {
+            database.data.users[m.sender] = {
+                registered: false,
+                premium: false,
+                banned: false,
+                warning: 0,
+                exp: 0,
+                level: 1,
+                limit: 20,
+                lastclaim: 0,
+                registered_time: 0
+            };
+            database.save();
+        }
+
+        // ========== 7. DETECCIÓN DE OBJETIVO ==========
+        let who = null;
+
         if (m.mentionedJid && m.mentionedJid[0]) {
             who = m.mentionedJid[0];
         } else if (m.quoted?.sender) {
             who = m.quoted.sender;
         }
-        // ❌ REMOVIDO: No hacer fallback a m.sender
 
-        // Limpieza de ID (quitar :1, :2 etc) solo si who existe
+        // Limpieza de ID
         if (who) {
             who = who.split('@')[0].split(':')[0] + '@s.whatsapp.net';
         }
 
-        // 7. Filtros de seguridad
-        if (cmd.owner && !isOwner) return;
-        if (cmd.group && !isGroup) return m.reply('🏢 Este comando solo funciona en grupos.');
+        // ========== 8. FILTROS DE SEGURIDAD Y PERMISOS ==========
+        
+        // Verificar si el usuario está baneado
+        if (database.data.users[m.sender]?.banned && !isOwner) {
+            return m.reply('🚫 Estás baneado del bot. Contacta al owner.');
+        }
 
-        // 8. Ejecutar comando
+        // Verificar si el comando requiere owner
+        if (cmd.owner && !isOwner) {
+            return m.reply('👑 Este comando solo puede ser usado por el owner del bot.');
+        }
+
+        // Verificar si el comando requiere rowner
+        if (cmd.rowner && !isROwner && !isOwner) {
+            return m.reply('👑 Este comando solo puede ser usado por los co-owners del bot.');
+        }
+
+        // Verificar si el comando requiere premium
+        if (cmd.premium && !isPremium && !isOwner) {
+            return m.reply('💎 Este comando es solo para usuarios premium.\n> Contacta al owner para obtener premium.');
+        }
+
+        // Verificar si el comando requiere registro
+        if (cmd.register && !isRegistered && !isOwner) {
+            return m.reply(`📝 Debes registrarte para usar este comando.\n> Usa: *${prefix}register nombre.edad*\n> Ejemplo: *${prefix}register Juan.25*`);
+        }
+
+        // Verificar si el comando requiere grupo
+        if (cmd.group && !isGroup) {
+            return m.reply('🏢 Este comando solo funciona en grupos.');
+        }
+
+        // Verificar si el comando requiere admin del grupo
+        if (cmd.admin && !isAdmin && !isOwner) {
+            return m.reply('👮 Este comando solo puede ser usado por administradores del grupo.');
+        }
+
+        // Verificar si el comando requiere que el bot sea admin
+        if (cmd.botAdmin && !isBotAdmin) {
+            return m.reply('🤖 Necesito ser administrador del grupo para usar este comando.');
+        }
+
+        // Verificar si el comando requiere chat privado
+        if (cmd.private && isGroup) {
+            return m.reply('💬 Este comando solo funciona en chat privado.');
+        }
+
+        // ========== 9. SISTEMA DE LÍMITES (OPCIONAL) ==========
+        
+        // Reducir límite de uso (excepto owner/premium)
+        if (cmd.limit && !isPremium && !isOwner) {
+            const userLimit = database.data.users[m.sender].limit || 0;
+            
+            if (userLimit < 1) {
+                return m.reply(`⚠️ Se te acabaron los límites de uso.\n💎 Los usuarios premium tienen límites ilimitados.\n\n> Contacta al owner o espera al reset diario.`);
+            }
+            
+            database.data.users[m.sender].limit -= 1;
+            database.save();
+        }
+
+        // ========== 10. EJECUTAR COMANDO ==========
         await cmd.run(m, { 
             conn, 
             args, 
             isOwner, 
+            isROwner,
+            isPremium,
+            isRegistered,
             isAdmin,
+            isBotAdmin,
             isGroup, 
-            who, // Ahora será null si no hay mención/quote
+            who,
             db: database.data 
         });
 
     } catch (e) {
         console.log(chalk.red(`[ERROR HANDLER]:`), e);
+        m.reply('❌ Ocurrió un error al ejecutar el comando.');
     }
-};

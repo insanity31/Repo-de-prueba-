@@ -7,49 +7,76 @@ export const run = async (m, { conn, db }) => {
             return m.reply(`💙 El contenido *NSFW* está desactivado en este grupo.\n> Un administrador puede activarlo con el comando » *#enable nsfw on*`);
         }
 
-        // 1. OBTENCIÓN DEL OBJETIVO (Mención, Texto o Citado)
+        // 1. OBTENCIÓN DEL OBJETIVO
         let victim = null
-        
-        // A. Intentar por mención oficial
         if (m.mentionedJid && m.mentionedJid[0]) {
             victim = m.mentionedJid[0]
-        } 
-        // B. Intentar por búsqueda manual en el texto (Si el handler falla)
-        else {
-            const text = m.text || m.body || ''
-            const extract = text.match(/@(\d+)/)
-            if (extract) victim = extract[1] + '@s.whatsapp.net'
-        }
-        // C. Intentar por mensaje citado
-        if (!victim && m.quoted) {
+        } else if (m.quoted?.sender) {
             victim = m.quoted.sender
         }
 
-        // 2. LÓGICA DE DETECCIÓN
+        // --- CONVERSIÓN DE LID A JID (Solo en grupos) ---
+        if (victim && victim.endsWith('@lid') && m.isGroup) {
+            const groupMetadata = await conn.groupMetadata(m.chat).catch(() => null)
+            const participant = groupMetadata?.participants?.find(p => 
+                p.lid === victim || p.id === victim
+            )
+            if (participant?.id) {
+                victim = participant.id
+            } else {
+                victim = null
+            }
+        }
+
+        // 2. VALIDACIÓN: Asegurar que victim sea JID válido
+        if (victim && !victim.endsWith('@s.whatsapp.net')) {
+            victim = null
+        }
+
+        // 3. LÓGICA DE DETECCIÓN
         let nameSender = m.pushName || 'Usuario'
         let targetName = ''
         let isAlone = true
 
-        // Limpieza extrema de números
-        const senderNum = m.sender.replace(/[^0-9]/g, '')
-        const victimNum = victim ? victim.replace(/[^0-9]/g, '') : null
+        // Limpieza segura de números
+        const cleanNum = (jid) => jid?.split('@')[0]?.replace(/:\d+/, '') || ''
+        const senderNum = cleanNum(m.sender)
+        const victimNum = cleanNum(victim)
 
-        if (victimNum && victimNum !== senderNum) {
+        if (victim && victimNum && victimNum !== senderNum) {
             isAlone = false
-            // Intentar sacar nombre, si no, usar el número limpio
-            const contactName = conn.getName ? conn.getName(victim) : null
-            targetName = m.quoted?.pushName || (contactName && !contactName.includes('@') ? contactName : `@${victimNum}`)
+            
+            // 🔥 OBTENER NOMBRE REAL (nunca mostrar LID/número)
+            if (m.quoted?.pushName) {
+                // Prioridad 1: Nombre del mensaje citado
+                targetName = m.quoted.pushName
+            } else {
+                // Prioridad 2: Nombre guardado en contactos del bot
+                const contactName = conn.getName(victim)
+                if (contactName && !contactName.includes('@') && contactName !== victimNum) {
+                    targetName = contactName
+                } else {
+                    // Prioridad 3: Buscar en metadatos del grupo
+                    if (m.isGroup) {
+                        const groupMetadata = await conn.groupMetadata(m.chat).catch(() => null)
+                        const participant = groupMetadata?.participants?.find(p => p.id === victim)
+                        targetName = participant?.notify || participant?.name || `Usuario ${victimNum.slice(-4)}`
+                    } else {
+                        targetName = `Usuario ${victimNum.slice(-4)}`
+                    }
+                }
+            }
         }
 
-        // 3. REACCIÓN
+        // 4. REACCIÓN
         await conn.sendMessage(m.chat, { react: { text: '💦', key: m.key } })
 
-        // 4. TEXTO
+        // 5. TEXTO (sin menciones numéricas, solo nombres)
         let txt = isAlone 
             ? `*${nameSender}* se vino solo... 🥑` 
             : `💦 ¡Uff! *${nameSender}* se ha venido sobre *${targetName}*!`
 
-        // 5. VIDEO
+        // 6. ENVÍO DE VIDEO
         const videoUrl = 'https://files.catbox.moe/4ws6bs.mp4'
         const { data } = await axios.get(videoUrl, { responseType: 'arraybuffer' })
 
@@ -58,11 +85,12 @@ export const run = async (m, { conn, db }) => {
             mimetype: 'video/mp4',
             caption: txt, 
             gifPlayback: true,
-            mentions: [m.sender, victim].filter(v => v) 
+            mentions: [m.sender, victim].filter(Boolean)
         }, { quoted: m })
 
     } catch (e) {
-        console.error("ERROR EN CUM:", e)
+        console.error("❌ ERROR EN CUM:", e)
+        m.reply("⚠️ Ocurrió un error al ejecutar el comando")
     }
 }
 
